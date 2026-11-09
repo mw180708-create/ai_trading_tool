@@ -34,6 +34,9 @@ def new_id() -> str:
 
 def smc_defaults() -> dict:
     d = asdict(StrategyConfig())
+    missing = [k for k in SMC_KEYS if k not in d]
+    if missing:   # zou nooit mogen gebeuren; duidelijke melding i.p.v. een kale KeyError
+        raise RuntimeError(f"Verouderde instellingen geladen (mist {', '.join(missing)}). Herstart de app.")
     return {k: d[k] for k in SMC_KEYS}
 
 

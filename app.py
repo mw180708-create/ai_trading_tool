@@ -5,11 +5,34 @@ Online:           share.streamlit.io -> repo mw180708-create/ai_trading_tool -> 
 """
 from __future__ import annotations
 
+import sys
 import traceback
+from pathlib import Path
 
 import streamlit as st
 
 st.set_page_config(page_title="AI Trading Tool", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
+
+_ROOT = Path(__file__).resolve().parent
+_PACKAGES = ("trading_tool", "webapp")
+
+
+def _ensure_fresh_code() -> None:
+    """Na een update (git pull op Streamlit Cloud) kan Python nog oude onderdelen in het geheugen hebben,
+    terwijl nieuwe onderdelen al nieuwe code verwachten (bv. KeyError). Is er iets veranderd, dan worden alle
+    eigen onderdelen en caches opnieuw geladen."""
+    files = sorted(p for pkg in _PACKAGES for p in (_ROOT / pkg).rglob("*.py"))
+    version = hash(tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in files))
+    if getattr(sys, "_ai_trading_code_version", None) == version:
+        return
+    for name in [n for n in sys.modules if n.split(".")[0] in _PACKAGES]:
+        del sys.modules[name]
+    st.cache_data.clear()
+    st.cache_resource.clear()
+    sys._ai_trading_code_version = version
+
+
+_ensure_fresh_code()
 
 from webapp import nav, state as S, theme  # noqa: E402
 from webapp.pages import (backtest, dashboard, data, help as help_page, login, results, strategies,  # noqa: E402
