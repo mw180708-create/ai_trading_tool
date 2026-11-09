@@ -69,7 +69,6 @@ def _detail(row: pd.Series, n: int) -> None:
 
 
 def render() -> None:
-    st.markdown("## 📋 Trades")
     if no_results("trd"):
         return
     res = S.get_results()
@@ -115,9 +114,9 @@ def render() -> None:
                 "equity": st.column_config.NumberColumn("Balans", format="dollar")})
         st.caption("Klik op een rij om de trade hieronder op de grafiek te zien.")
         d1, d2 = st.columns(2)
-        d1.download_button("⬇️  Trades downloaden (CSV voor Excel)", view.to_csv(index=False).encode(),
+        d1.download_button("Download selectie (CSV)", view.to_csv(index=False).encode(),
                            "trades.csv", "text/csv", width="stretch")
-        d2.download_button("⬇️  Alle trades (incl. details)", t.to_csv(index=False).encode(), "trades_alles.csv",
+        d2.download_button("Download alle trades (CSV)", t.to_csv(index=False).encode(), "trades_alles.csv",
                            "text/csv", width="stretch")
 
     if view.empty:

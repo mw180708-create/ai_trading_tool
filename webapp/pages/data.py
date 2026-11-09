@@ -82,7 +82,7 @@ def _connect_wizard(status: dict) -> None:
 3. Zet een vinkje bij **repo** (het bovenste vakje, de rest gaat vanzelf mee).
 4. Scroll naar beneden → **Generate token** → klik op het kopieer-icoontje naast de code (begint met `ghp_`).
 
-⚠️ GitHub laat de code maar één keer zien. Kwijt? Maak gewoon een nieuwe.
+GitHub laat de code maar één keer zien. Kwijt? Maak gewoon een nieuwe.
 """)
     with t_fine:
         st.markdown("""
@@ -104,10 +104,10 @@ def _connect_wizard(status: dict) -> None:
         if ok:
             S.use_token_now(tok, status.get("repo"))
             st.session_state["gh_ok_token"] = S.clean_token(tok)
-            S.flash("✅ Gelukt! " + msg + " Opslaan op GitHub staat nu aan.", "success")
+            S.flash("Gelukt. " + msg + " Opslaan op GitHub staat nu aan.", "success")
             st.rerun()
         else:
-            st.error("❌ " + msg)
+            st.error(msg)
 
     if st.session_state.get("gh_ok_token"):
         _save_step(status)
@@ -121,7 +121,7 @@ def _storage_panel() -> None:
         st.info("Je bent ingelogd als **gast**: je data wordt niet blijvend bewaard. Maak een gratis account om alles te bewaren.")
         return
     if not can_manage:
-        st.markdown(badge("Je data wordt blijvend bewaard ✓", "ok") if store.synced else
+        st.markdown(badge("Opslag: blijvend", "ok") if store.synced else
                     badge("Opslag: tijdelijk (de beheerder heeft nog geen blijvende opslag gekoppeld)", "warn"),
                     unsafe_allow_html=True)
         return
@@ -130,7 +130,7 @@ def _storage_panel() -> None:
             src = {"secrets": "Secrets (blijvend)", "website": "op de website geplakt (tot herstart)",
                    "omgeving": "omgevingsvariabele"}.get(status.get("source"), "")
             c1, c2 = st.columns([3, 1])
-            c1.markdown(f"{badge('Opslag gekoppeld aan GitHub ✓', 'ok')} &nbsp; Alles wat je opslaat komt in "
+            c1.markdown(f"{badge('Gekoppeld aan GitHub', 'ok')} &nbsp; Alles wat je opslaat komt in "
                         f"**{status['repo']}** (map `data/store/`) en blijft bewaard.  \n"
                         f"<span class='small-note'>Token uit: {src}</span>", unsafe_allow_html=True)
             if c2.button("Verbinding testen", width="stretch"):
@@ -141,14 +141,14 @@ def _storage_panel() -> None:
                 w1, w2 = st.columns([3, 1])
                 w1.warning(f"{len(pending)} bestand(en) staan alleen nog op de server (opgeslagen vóór de koppeling). "
                            "Stuur ze naar GitHub zodat ze bewaard blijven.")
-                if w2.button("⬆️  Nu naar GitHub sturen", type="primary", width="stretch"):
+                if w2.button("Naar GitHub sturen", type="primary", width="stretch"):
                     with st.spinner("Bezig met uploaden naar GitHub..."):
                         rep = store.push_unsynced()
-                    S.flash(f"{rep.total} bestand(en) op GitHub gezet ✓" if not rep.error
+                    S.flash(f"{rep.total} bestand(en) op GitHub gezet." if not rep.error
                             else f"Uploaden naar GitHub mislukt: {rep.error}", "success" if not rep.error else "error")
                     st.rerun()
             if status.get("source") == "website":
-                with st.expander("📌  Token blijvend opslaan in Streamlit Secrets", expanded=True):
+                with st.expander("Token blijvend opslaan in Streamlit Secrets", expanded=True):
                     _save_step(status)
             return
 
@@ -164,7 +164,7 @@ def _storage_panel() -> None:
             if st.button("Opnieuw controleren"):
                 S.reset_github()
                 st.rerun()
-        with st.expander("🔗  GitHub koppelen (±3 minuten)", expanded=bool(status.get("configured")
+        with st.expander("GitHub koppelen", expanded=bool(status.get("configured")
                                                                             or status.get("secrets_error"))):
             _connect_wizard(status)
 
@@ -188,7 +188,7 @@ def _library(store, editable: bool, key: str) -> None:
         with c2:
             st.write("")
             confirm = st.checkbox("Ja, verwijderen", key=f"{key}_del_confirm")
-            if st.button("🗑️  Verwijderen", disabled=not confirm, width="stretch", key=f"{key}_del"):
+            if st.button("Verwijderen", disabled=not confirm, width="stretch", key=f"{key}_del"):
                 rep = store.delete(row["Markt"], row["Timeframe"])
                 msg = f"{row['Markt']} {row['Timeframe']} verwijderd."
                 if rep.error:
@@ -213,7 +213,7 @@ def _target_store():
 def _report(store, sym, tf, rep, where: str) -> None:
     msg = f"{sym} {tf}: {rep.added:,} nieuwe candles toegevoegd aan {where} (totaal {rep.total:,})."
     if store.synced:
-        msg += " Blijvend bewaard ✓" if rep.synced else f" ⚠️ Blijvend opslaan mislukt: {rep.error}"
+        msg += " Blijvend bewaard." if rep.synced else f" Let op: blijvend opslaan mislukt ({rep.error})."
     S.flash(msg, "success" if not rep.error else "warning")
 
 
@@ -253,7 +253,7 @@ def _upload() -> None:
     bad = [p for p in plan if len(p[1]) < 2]
     if bad:
         st.warning("Geef elke markt een naam van minstens 2 tekens.")
-    if plan and not bad and st.button(f"💾  {len(plan)} bestand(en) opslaan in {where}", type="primary", width="stretch"):
+    if plan and not bad and st.button(f"{len(plan)} bestand(en) opslaan in {where}", type="primary", width="stretch"):
         prog = st.progress(0.0)
         for i, (name, sym, tf, df) in enumerate(plan):
             prog.progress(i / len(plan), text=f"Opslaan: {name}")
@@ -289,7 +289,7 @@ def _download() -> None:
         end = c3.date_input("Tot en met", value=now.date())
         jobs = [(tf, pd.Timestamp(start, tz="UTC"), min(now, pd.Timestamp(end, tz="UTC") + pd.Timedelta(days=1)))
                 for tf in tfs]
-    if st.button("⬇️  Downloaden & opslaan", type="primary", width="stretch", disabled=not jobs):
+    if st.button("Downloaden en opslaan", type="primary", width="stretch", disabled=not jobs):
         sym = f"{base}USD"
         for tf, t0, t1 in jobs:
             bar = st.progress(0.0, text=f"{sym} {tf} downloaden...")
@@ -324,18 +324,17 @@ def _demo() -> None:
 
 
 def render() -> None:
-    st.markdown("## 📁 Data")
     S.show_flash()
     _storage_panel()
-    sections = ["📚  Mijn data", "🌐  Gedeelde data", "📤  Uploaden", "⬇️  Downloaden", "🧪  Demo"]
+    sections = ["Mijn data", "Gedeelde data", "Uploaden", "Downloaden", "Demo"]
     section = st.segmented_control("Onderdeel", sections, default=sections[0], key="data_section",
                                    label_visibility="collapsed") or sections[0]
     with st.container(key="panel_section"):
         if section == sections[0]:
-            ptitle("Mijn data · alleen voor jou zichtbaar")
+            ptitle("Mijn data – alleen zichtbaar voor jou")
             _library(S.store(), editable=True, key="own")
         elif section == sections[1]:
-            ptitle("Gedeelde data · beschikbaar voor iedereen")
+            ptitle("Gedeelde data – beschikbaar voor iedereen")
             st.caption("Deze data kan iedereen gebruiken in backtests. Heb je zelf dezelfde markt en timeframe, "
                        "dan gaat jouw eigen data voor." + (" Als beheerder kun je hier ook verwijderen." if S.is_admin() else ""))
             _library(S.shared_store(), editable=S.is_admin(), key="shared")
@@ -348,5 +347,5 @@ def render() -> None:
         else:
             ptitle("Demo-modus")
             _demo()
-    html_block('<p class="small-note">Tip: voor de beste backtest heb je per asset <b>1-minuut data</b> (backtest-periode) '
-               'én <b>1D-data met jaren historie</b> nodig (voor de Monthly/Weekly analyse).</p>')
+    html_block('<p class="small-note">Tip: gebruik de kleinste timeframe die je hebt (bij voorkeur 1 minuut) voor de '
+               'backtestperiode, plus een dag-bestand met meer historie als je strategie hogere timeframes gebruikt.</p>')

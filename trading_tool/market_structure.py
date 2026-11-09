@@ -4,7 +4,7 @@ Alle signalen zijn *lookahead-vrij*: een swing high/low op bar j is pas bekend o
 bar j+n (n = fractal-lengte) en iedere waarde op bar k gebruikt alleen data t/m k.
 De tijd waarop een waarde bekend is = close_time van die bar.
 
-Operationalisatie van het Trading Plan (discretionaire begrippen -> regels):
+Operationalisatie van het Smart Money-model (discretionaire begrippen -> regels):
 
 * Swing high/low (liquiditeitspool): fractal met n bars links/rechts.
 * Liquiditeit (draw on liquidity):

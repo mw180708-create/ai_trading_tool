@@ -10,25 +10,24 @@ from .. import state as S
 
 
 def render() -> None:
-    st.markdown("## ℹ️ Uitleg")
     c1, c2 = st.columns(2, gap="large")
     with c1, st.container(key="panel_howto"):
         st.markdown("""
 #### Zo werkt het
 1. **Maak een account** (of probeer eerst als gast). Je data, strategieën en resultaten zijn alleen voor jou.
-2. **🧠 Strategieën** – begin vanuit een sjabloon of leeg en stel je regels samen. Geen code nodig.
-3. **📁 Data** – upload exports uit MetaTrader / TradingView (elke markt) of download crypto direct.
-4. **▶️ Backtest** – kies strategie, markten en periode.
-5. **📊 Resultaten / 📋 Trades** – winrate, drawdown, profit factor, equity curve, elke trade op de grafiek.
+2. **Strategieën** – begin vanuit een sjabloon of leeg en stel je regels samen. Geen code nodig.
+3. **Data** – upload exports uit MetaTrader / TradingView (elke markt) of download crypto direct.
+4. **Backtest** – kies strategie, markten en periode.
+5. **Resultaten / Trades** – winrate, drawdown, profit factor, equity curve, elke trade op de grafiek.
    Je laatste 30 backtests worden bewaard, zodat je strategieën kunt vergelijken.
-6. **🏠 Dashboard** – de actuele stand van je strategie op de nieuwste data.
+6. **Dashboard** – de actuele stand van je strategie op de nieuwste data.
 
 #### Twee soorten strategieën
 - **Indicatoren & regels**: voorwaarden zoals *EMA(20) kruist boven EMA(50)* of *RSI(14) kleiner dan 30*,
   eventueel op een hogere timeframe (*Close groter dan EMA(200) [1D]*). Kies stop loss, take profit,
   break-even, trailing stop, maximale duur en handelsuren.
-- **Smart Money (POI & liquiditeit)**: het multi-timeframe model van het Trading Plan 2026-2028 –
-  timeframe-combinaties, POI-timeframes, confirmatie (POI in POI), RR-filter en break-even per type trade.
+- **Smart Money (POI & liquiditeit)**: een multi-timeframe model met bias per timeframe (liquiditeit + structuur),
+  POI-zones en confirmatie op een lagere timeframe (POI in POI), RR-filter en break-even per type trade.
 
 #### Eerlijk backtesten
 - Signalen gebruiken alleen gesloten candles; hogere timeframes alleen hun laatst gesloten candle.

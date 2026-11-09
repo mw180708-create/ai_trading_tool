@@ -14,12 +14,11 @@ from ..theme import badge, esc, html_block, ptitle
 
 
 def render() -> None:
-    st.markdown("## ▶️ Backtest")
     S.show_flash()
     syms = S.symbols()
     if not syms:
         st.info("Er is nog geen koersdata. Voeg eerst data toe (of probeer de demo).")
-        if st.button("📁  Naar Data", type="primary"):
+        if st.button("Naar data", type="primary"):
             nav.go("data")
         return
     choices = S.strategy_choices()
@@ -28,17 +27,17 @@ def render() -> None:
 
     left, right = st.columns([1.1, 1], gap="large")
     with left, st.container(key="panel_bt_strategy"):
-        ptitle("1 · Strategie")
+        ptitle("Strategie")
         idx = ids.index(want) if want in ids else 0
         sid = st.selectbox("Strategie", ids, index=idx, format_func=lambda i: next(s["name"] for s in choices if s["id"] == i),
                            label_visibility="collapsed")
         st.session_state["bt_strategy"] = sid
         strategy = next(s for s in choices if s["id"] == sid)
         if sid.startswith("tpl-"):
-            st.caption("Dit is een sjabloon. Pas het aan en sla het op bij **🧠 Strategieën**.")
-        html_block(badge(strat.TYPES[strategy["type"]], "info") + "<ul style='margin:8px 0 0 18px;color:#c4cad6;font-size:.88rem'>"
+            st.caption("Dit is een sjabloon. Pas het aan en sla het op bij **Strategieën**.")
+        html_block(badge(strat.TYPES[strategy["type"]], "info") + "<ul style='margin:8px 0 0 18px;color:#b4b4bc;font-size:.88rem'>"
                    + "".join(f"<li>{esc(x)}</li>" for x in strat.describe(strategy)) + "</ul>")
-        if st.button("✏️  Strategie aanpassen", key="bt_edit"):
+        if st.button("Strategie aanpassen", key="bt_edit"):
             if not sid.startswith("tpl-"):
                 import copy
                 st.session_state["draft"] = copy.deepcopy(strategy)
@@ -46,7 +45,7 @@ def render() -> None:
 
     need = strat.required_timeframes(strategy)
     with right, st.container(key="panel_bt_markets"):
-        ptitle("2 · Markten")
+        ptitle("Markten")
         chosen = []
         for s in syms:
             m = S.mtf(s)
@@ -60,7 +59,7 @@ def render() -> None:
             span = f"{m[m.base_tf].index[0]:%d-%m-%Y} → {m[m.base_tf].index[-1]:%d-%m-%Y}"
             note = f"Executie op **{m.base_tf}** · {span}"
             if missing:
-                note += f"  \n⚠️ Ontbreekt voor deze strategie: {', '.join(missing)} – voeg die data toe of pas de strategie aan."
+                note += f"  \nOntbreekt voor deze strategie: {', '.join(missing)} – voeg die data toe of pas de strategie aan."
             c2.markdown(f"<span class='small-note'>{note.replace(chr(10), '<br>')}</span>", unsafe_allow_html=True)
             c2.caption("Timeframes: " + " · ".join(have))
         st.session_state["bt_syms"] = chosen
@@ -68,7 +67,7 @@ def render() -> None:
             html_block(badge("Demo-data (nep)", "warn"))
 
     with st.container(key="panel_bt_settings"):
-        ptitle("3 · Instellingen")
+        ptitle("Instellingen")
         c1, c2, c3 = st.columns(3)
         balance = c1.number_input("Startbalans per markt ($)", 100, 100_000_000, 100_000, step=5_000)
         start = c2.date_input("Start (optioneel)", value=None, help="Data hiervoor wordt alleen als opwarmperiode gebruikt.")
@@ -84,7 +83,7 @@ def render() -> None:
     errs = strat.validate(strategy)
     for e in errs:
         st.error(e)
-    run = st.button("▶  Start backtest", type="primary", width="stretch", disabled=not chosen or bool(errs))
+    run = st.button("Start backtest", type="primary", width="stretch", disabled=not chosen or bool(errs))
     if not run:
         return
 
@@ -117,6 +116,6 @@ def render() -> None:
     rep = S.save_run(r)
     msg = f"Backtest klaar: {len(r.trades)} trades met '{strategy['name']}'."
     if rep.error:
-        msg += f" ⚠️ Opslaan op GitHub mislukt: {rep.error}"
+        msg += f" Let op: opslaan op GitHub mislukt ({rep.error})."
     S.flash(msg)
     nav.go("results")

@@ -99,7 +99,7 @@ def _rules_editor(d: dict, key: str) -> None:
     dirs = {"long": "Alleen long", "short": "Alleen short", "both": "Long én short"}
     p["direction"] = c2.radio("Richting", list(dirs), format_func=dirs.get, horizontal=True,
                               index=list(dirs).index(p["direction"]), key=f"{key}_dir")
-    with st.expander("ℹ️  Welke indicatoren en instellingen zijn er?"):
+    with st.expander("Welke indicatoren en instellingen zijn er?"):
         st.dataframe(pd.DataFrame([{"Indicator": v[0], "Instelling (volgorde)": ", ".join(f"{n} ({dv:g})" for n, dv, *_ in v[1]) or "-"}
                                    for v in INDICATORS.values()]), hide_index=True, width="stretch")
         st.caption("Laat 'Instelling' leeg voor de standaardwaarde. 'TF' = op welke timeframe de indicator wordt berekend "
@@ -107,7 +107,7 @@ def _rules_editor(d: dict, key: str) -> None:
     for side in ("long", "short"):
         if p["direction"] not in (side, "both"):
             continue
-        st.markdown(f"**{'🟢 Long' if side == 'long' else '🔴 Short'}-voorwaarden**")
+        st.markdown(f"**{'Long' if side == 'long' else 'Short'}-voorwaarden**")
         logic = st.radio("Logica", ["all", "any"], horizontal=True, key=f"{key}_{side}_logic",
                          index=0 if p[side].get("logic", "all") == "all" else 1,
                          format_func=lambda x: "Alle voorwaarden moeten kloppen (EN)" if x == "all"
@@ -217,8 +217,8 @@ def editor() -> None:
     key = f"ed_{d['id']}"
     with st.container(key="panelglow_editor"):
         top = st.columns([3, 1])
-        top[0].markdown(f"### ✏️ {esc(d['name']) or 'Strategie'}")
-        if top[1].button("✕  Sluiten zonder opslaan", width="stretch"):
+        top[0].markdown(f"#### {esc(d['name']) or 'Strategie'}")
+        if top[1].button("Sluiten zonder opslaan", width="stretch"):
             _close_editor()
             st.rerun()
         html_block(badge(strat.TYPES[d["type"]], "info"))
@@ -235,18 +235,18 @@ def editor() -> None:
             _smc_editor(d, key)
 
         st.markdown("**Samenvatting**")
-        html_block("<ul style='margin:0 0 6px 18px;color:#c4cad6'>" +
+        html_block("<ul style='margin:0 0 6px 16px;padding:0;color:#b4b4bc'>" +
                    "".join(f"<li>{esc(x)}</li>" for x in strat.describe(d)) + "</ul>")
         errs = strat.validate(d)
         for e in errs:
             st.warning(e)
         b1, b2, _ = st.columns([1, 1, 2])
-        if b1.button("💾  Opslaan", type="primary", width="stretch", disabled=bool(errs)):
+        if b1.button("Opslaan", type="primary", width="stretch", disabled=bool(errs)):
             rep = S.save_strategy(d)
-            S.flash(f"Strategie '{d['name']}' opgeslagen." + (f" ⚠️ GitHub: {rep.error}" if rep.error else ""))
+            S.flash(f"Strategie '{d['name']}' opgeslagen." + (f" Let op: GitHub ({rep.error})." if rep.error else ""))
             _close_editor()
             st.rerun()
-        if b2.button("💾  Opslaan & backtesten", width="stretch", disabled=bool(errs)):
+        if b2.button("Opslaan en backtesten", width="stretch", disabled=bool(errs)):
             S.save_strategy(d)
             st.session_state["bt_strategy"] = d["id"]
             _close_editor()
@@ -262,30 +262,31 @@ def _card(s: dict, mine: bool, i: int) -> None:
         if mine and s.get("public"):
             tags += " " + badge("Gedeeld", "ok")
         if not mine:
-            tags += " " + badge(f"door {s.get('owner', '?')}", "warn")
-        html_block(f"<div style='font-family:Space Grotesk;font-weight:700;font-size:1.1rem'>{esc(s['name'])}</div>"
-                   f"<div style='margin:6px 0'>{tags}</div>"
-                   + (f"<div class='small-note' style='margin-bottom:6px'>{esc(s['description'])}</div>" if s.get("description") else "")
-                   + "<ul style='margin:0 0 4px 18px;color:#c4cad6;font-size:.86rem'>"
+            tags += " " + badge(f"door {s.get('owner', '?')}", "info")
+        html_block(f"<div style='font-weight:600;font-size:1rem'>{esc(s['name'])}</div>"
+                   f"<div style='margin:8px 0'>{tags}</div>"
+                   + (f"<div class='small-note' style='margin-bottom:8px'>{esc(s['description'])}</div>" if s.get("description") else "")
+                   + "<ul style='margin:0 0 4px 16px;padding:0;color:#b4b4bc;font-size:.84rem'>"
                    + "".join(f"<li>{esc(x)}</li>" for x in strat.describe(s)[1:]) + "</ul>")
-        st.caption(f"Bijgewerkt: {s.get('updated', '-')}")
+        st.caption(f"Bijgewerkt {s.get('updated', '-')}")
         if mine:
-            b = st.columns(4)
-            if b[0].button("▶ Test", key=f"bt_{s['id']}", width="stretch", help="Backtest deze strategie"):
+            b = st.columns([1, 1, 0.8])
+            if b[0].button("Testen", key=f"bt_{s['id']}", width="stretch", type="primary"):
                 st.session_state["bt_strategy"] = s["id"]
                 nav.go("backtest")
-            if b[1].button("✏️", key=f"editbtn_{s['id']}", width="stretch", help="Bewerken"):
+            if b[1].button("Bewerken", key=f"editbtn_{s['id']}", width="stretch"):
                 st.session_state["draft"] = copy.deepcopy(s)
                 st.rerun()
-            if b[2].button("⧉", key=f"dup_{s['id']}", width="stretch", help="Dupliceren"):
-                dup = dict(copy.deepcopy(s), id=strat.new_id(), name=f"{s['name']} (kopie)", public=False,
-                           created=strat.now_iso())
-                S.save_strategy(dup)
-                S.flash(f"Kopie gemaakt: {dup['name']}")
-                st.rerun()
-            if b[3].button("🗑", key=f"del_{s['id']}", width="stretch", help="Verwijderen"):
-                st.session_state["confirm_del"] = s["id"]
-                st.rerun()
+            with b[2].popover("Meer", width="stretch"):
+                if st.button("Dupliceren", key=f"dup_{s['id']}", width="stretch"):
+                    dup = dict(copy.deepcopy(s), id=strat.new_id(), name=f"{s['name']} (kopie)", public=False,
+                               created=strat.now_iso())
+                    S.save_strategy(dup)
+                    S.flash(f"Kopie gemaakt: {dup['name']}")
+                    st.rerun()
+                if st.button("Verwijderen", key=f"del_{s['id']}", width="stretch"):
+                    st.session_state["confirm_del"] = s["id"]
+                    st.rerun()
             if st.session_state.get("confirm_del") == s["id"]:
                 st.warning(f"'{s['name']}' echt verwijderen?")
                 y, n = st.columns(2)
@@ -298,7 +299,7 @@ def _card(s: dict, mine: bool, i: int) -> None:
                     st.session_state.pop("confirm_del", None)
                     st.rerun()
         else:
-            if st.button("⧉  Kopiëren naar mijn strategieën", key=f"cp_{s['owner']}_{s['id']}", width="stretch"):
+            if st.button("Kopiëren naar mijn strategieën", key=f"cp_{s['owner']}_{s['id']}", width="stretch"):
                 cp = dict(copy.deepcopy(s), id=strat.new_id(), public=False, created=strat.now_iso(),
                           copied_from=f"{s.get('owner')}/{s['id']}", name=f"{s['name']} (van {s.get('owner')})")
                 S.save_strategy(cp)
@@ -320,22 +321,21 @@ def _new() -> None:
     for i, k in enumerate(keys):
         t = strat.TEMPLATES[k]
         with cols[i % 3], st.container(key=f"panel_tpl{i}"):
-            html_block(f"<div style='font-family:Space Grotesk;font-weight:700'>{esc(t['name'])}</div>"
-                       f"<div style='margin:6px 0'>{badge(strat.TYPES[t['type']], 'info')}</div>"
-                       f"<div class='small-note'>{esc(t['description'] or 'Begin met één voorwaarde en bouw verder.')}</div>")
-            if st.button("Gebruik dit sjabloon", key=f"tpl_{k}", width="stretch"):
+            html_block(f"<div style='font-weight:600'>{esc(t['name'])}</div>"
+                       f"<div style='margin:8px 0'>{badge(strat.TYPES[t['type']], 'info')}</div>"
+                       f"<div class='small-note' style='min-height:3.6em'>{esc(t['description'] or 'Begin met één voorwaarde en bouw verder.')}</div>")
+            if st.button("Gebruiken", key=f"tpl_{k}", width="stretch"):
                 st.session_state["draft"] = strat.normalize(strat.from_template(k, S.display_name()))
                 st.rerun()
 
 
 def render() -> None:
-    st.markdown("## 🧠 Strategieën")
     S.show_flash()
     if "draft" in st.session_state:
         editor()
         return
     own = S.list_strategies()
-    sections = ["📂  Mijn strategieën", "➕  Nieuwe strategie", "🌍  Community"]
+    sections = ["Mijn strategieën", "Nieuwe strategie", "Community"]
     default = sections[0] if own else sections[1]
     section = st.segmented_control("Onderdeel", sections, default=default, key="strat_section",
                                    label_visibility="collapsed") or default

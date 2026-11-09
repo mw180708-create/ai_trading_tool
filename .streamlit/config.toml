@@ -1,10 +1,20 @@
 [theme]
 base = "dark"
-primaryColor = "#3b9eff"
-backgroundColor = "#0a0e15"
-secondaryBackgroundColor = "#151d2b"
-textColor = "#e6e9ef"
-font = "sans serif"
+primaryColor = "#5b7cfa"
+backgroundColor = "#0b0b0c"
+secondaryBackgroundColor = "#161618"
+textColor = "#ececee"
+borderColor = "#26262b"
+dataframeBorderColor = "#222226"
+dataframeHeaderBackgroundColor = "#111113"
+linkColor = "#9aabff"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap, sans-serif"
+baseFontSize = 14
+headingFontWeights = 600
+baseRadius = "0.375rem"
+buttonRadius = "0.375rem"
+showWidgetBorder = true
+chartCategoricalColors = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9"]
 
 [server]
 maxUploadSize = 500

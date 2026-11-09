@@ -23,7 +23,7 @@ from trading_tool.synthetic import demo_dataset
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPO = "mw180708-create/ai_trading_tool"
-SYMBOLS = ["BTCUSD", "XAUUSD"]
+SYMBOLS = ["BTCUSD", "EURUSD"]          # alleen voor de demo
 
 
 # --------------------------------------------------------------------------- #
@@ -235,7 +235,7 @@ def symbols() -> list[str]:
     if demo_on():
         return SYMBOLS
     found = set(store().symbols()) | set(shared_store().symbols())
-    return [s for s in SYMBOLS if s in found] + sorted(s for s in found if s not in SYMBOLS)
+    return sorted(found)
 
 
 def data_origin(symbol: str) -> dict[str, str]:
@@ -473,7 +473,7 @@ def daily_change(m: MultiTimeframeData) -> tuple[float, float, pd.Series]:
 def fmt_bias(v) -> tuple[str, str]:
     if v is None:
         return "–", "na"
-    return {1: ("▲ Bull", "bull"), -1: ("▼ Bear", "bear"), 0: ("● 50/50", "")}[int(v)]
+    return {1: ("Bullish", "bull"), -1: ("Bearish", "bear"), 0: ("50/50", "")}[int(v)]
 
 
 def strategy_choices() -> list[dict]:

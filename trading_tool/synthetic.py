@@ -9,9 +9,13 @@ def generate_ohlc(symbol: str, start: str = "2021-01-01", end: str = "2025-01-01
                   freq: str = "5min", seed: int = 7, drift_scale: float = 0.005) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     idx = pd.date_range(start, end, freq=freq, tz="UTC", inclusive="left")
+    fiat = {"EUR", "USD", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD"}
     if symbol.upper().startswith("XAU"):
         idx = idx[idx.dayofweek < 5]          # goud: geen weekend
         price0, ann_vol = 1800.0, 0.15
+    elif symbol.upper()[:3] in fiat and symbol.upper()[3:6] in fiat:
+        idx = idx[idx.dayofweek < 5]          # forex: geen weekend
+        price0, ann_vol = 1.10, 0.08
     else:
         price0, ann_vol = 30000.0, 0.60
     n = len(idx)

@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 echo ============================================
-echo   AI Trading Tool - installeren en starten
+echo   wng - installeren en starten
 echo ============================================
 where python >nul 2>nul
 if errorlevel 1 (

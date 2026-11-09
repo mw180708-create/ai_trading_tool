@@ -1,8 +1,4 @@
-"""Centrale configuratie: timeframes, Trading Plan regels, risico en kosten.
-
-Alle regels uit het Trading Plan 2026-2028 staan hier als data, zodat de logica
-in de andere modules nergens "magische" waarden bevat.
-"""
+"""Centrale configuratie: timeframes, standaardinstellingen van het Smart Money-model, risico en kosten."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -59,7 +55,7 @@ def tf_bar_close(open_times: pd.DatetimeIndex, tf: str) -> pd.DatetimeIndex:
 
 
 # --------------------------------------------------------------------------- #
-# Trading Plan regels
+# Smart Money / POI-model: standaardinstellingen (per strategie aan te passen)
 # --------------------------------------------------------------------------- #
 # Stap 1: geldige timeframe-combinaties voor een bias-match
 BIAS_COMBOS: list[tuple[tuple[str, str, str], str]] = [
@@ -146,7 +142,11 @@ class CostConfig:
     commission_pct: float = 0.0    # per kant, als fractie van de notional
 
 
+# Voorstel voor kosten bij bekende markten (per backtest aan te passen); onbekende markten: 0
 DEFAULT_COSTS: dict[str, CostConfig] = {
     "BTCUSD": CostConfig(spread=15.0, commission_pct=0.0003),
+    "ETHUSD": CostConfig(spread=1.0, commission_pct=0.0003),
     "XAUUSD": CostConfig(spread=0.30, commission_pct=0.00002),
+    "EURUSD": CostConfig(spread=0.00008, commission_pct=0.00003),
+    "GBPUSD": CostConfig(spread=0.00010, commission_pct=0.00003),
 }

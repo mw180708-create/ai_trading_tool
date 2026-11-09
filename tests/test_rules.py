@@ -45,7 +45,7 @@ def test_validation_errors():
     assert validate_rules({"direction": "long", "long": {"conditions": []}})
     bad = {"direction": "long", "long": {"conditions": [{"left": {"ind": "foo"}, "op": ">", "right": {"ind": "close"}}]}}
     assert any("onbekende indicator" in e for e in validate_rules(bad))
-    s = from_template("trading_plan", "x")
+    s = from_template("smc_poi", "x")
     s["params"]["confirmation_tf"]["1H"] = "4H"
     assert any("lagere timeframe" in e for e in validate(s))
 

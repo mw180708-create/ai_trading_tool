@@ -1,100 +1,116 @@
-"""Opmaak: donker trading-dashboard thema + kleine HTML-bouwstenen (kaarten, chips, badges)."""
+"""wng - opmaak: rustig, neutraal, minimalistisch. Eén accentkleur, platte panelen, dunne randen."""
 from __future__ import annotations
 
 import html
+from pathlib import Path
 
 import streamlit as st
 
-# Kleuren (categorisch gevalideerd voor het donkere oppervlak)
-SERIES = {"BTCUSD": "#3987e5", "XAUUSD": "#d95926", "TOTAAL": "#c3c2b7"}
-UP, DOWN, NEUTRAL = "#26a69a", "#ef5350", "#8b95a7"
-ACCENT, GOLD = "#3b9eff", "#e8b339"
-SYMBOL_NAME = {"BTCUSD": "Bitcoin · BTC/USD", "XAUUSD": "Goud · XAU/USD"}
-SYMBOL_ICON = {"BTCUSD": "₿", "XAUUSD": "Au"}
+ASSETS = Path(__file__).resolve().parents[1] / "assets"
+LOGO = ASSETS / "wng-logo.svg"
+ICON = ASSETS / "wng-icon.svg"
+
+# Kleuren
+SERIES = {"TOTAAL": "#a1a1aa"}                       # per markt: zie series_color()
+_CATEGORICAL = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9"]   # gevalideerd, donker
+UP, DOWN, NEUTRAL = "#26a69a", "#ef5350", "#71717a"
+ACCENT = "#5b7cfa"
+EMA_FAST, EMA_SLOW = "#c8a24a", "#5b7cfa"
+
+
+def series_color(name: str, order: list[str] | None = None) -> str:
+    if name in SERIES:
+        return SERIES[name]
+    order = order or [name]
+    i = order.index(name) if name in order else 0
+    return _CATEGORICAL[i % len(_CATEGORICAL)]
+
 
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 :root{
-  --bg:#0a0e15; --panel:#111722; --panel2:#151d2b; --line:rgba(110,150,230,.16);
-  --text:#e6e9ef; --muted:#8b95a7; --accent:#3b9eff; --gold:#e8b339; --up:#26a69a; --down:#ef5350;
+  --bg:#0b0b0c; --surface:#111113; --surface-2:#161618; --line:#222226; --line-2:#2c2c31;
+  --text:#ececee; --muted:#8b8b94; --subtle:#5f5f69; --accent:#5b7cfa; --up:#26a69a; --down:#ef5350;
 }
-.stApp{
-  background:
-    radial-gradient(1100px 520px at 75% -12%, rgba(59,158,255,.13), transparent 60%),
-    radial-gradient(800px 480px at -8% 108%, rgba(232,179,57,.07), transparent 60%),
-    var(--bg);
-}
-html, body, .stApp, .stMarkdown, button, input, textarea, select{font-family:Inter, system-ui, sans-serif;}
-.block-container{padding-top:4.2rem; padding-bottom:3rem; max-width:1520px;}
-h1, h2, h3, h4{font-family:'Space Grotesk', Inter, sans-serif !important; letter-spacing:.01em;}
-header[data-testid="stHeader"]{background:rgba(10,14,21,.82); backdrop-filter:blur(10px); border-bottom:1px solid var(--line);}
+.stApp{background:var(--bg);}
+.block-container{padding-top:4.6rem; padding-bottom:4rem; max-width:1440px;}
+header[data-testid="stHeader"]{background:rgba(11,11,12,.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
+h1,h2,h3,h4{letter-spacing:-.01em;}
+p, li{line-height:1.55;}
 
-/* Glas-panelen: alle containers met key die begint met "panel" */
+/* panelen: containers met een key die met "panel" begint */
 div[class*="st-key-panel"]{
-  background:linear-gradient(180deg, rgba(21,29,43,.92), rgba(15,21,32,.92));
-  border:1px solid var(--line) !important; border-radius:16px; padding:16px 18px 14px 18px;
-  box-shadow:0 0 0 1px rgba(59,158,255,.04), 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
+  background:var(--surface); border:1px solid var(--line) !important; border-radius:8px; padding:16px 18px;
 }
-div[class*="st-key-panelglow"]{border-color:rgba(59,158,255,.35) !important;
-  box-shadow:0 0 24px rgba(59,158,255,.12), 0 10px 30px rgba(0,0,0,.35);}
+div[class*="st-key-panelglow"]{border-color:var(--line-2) !important;}
 
-.ptitle{font-size:.74rem; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); margin:0 0 8px 0;}
-.brand{display:flex; align-items:center; gap:12px; margin:0 0 4px 0;}
-.brand-logo{width:40px; height:40px; border-radius:11px; display:grid; place-items:center; font-weight:700;
-  background:linear-gradient(135deg, var(--gold), #f6d36b); color:#151006; font-family:'Space Grotesk'; font-size:1.05rem;
-  box-shadow:0 0 22px rgba(232,179,57,.35);}
-.brand-name{font-family:'Space Grotesk'; font-size:1.55rem; font-weight:700; line-height:1.05;}
-.brand-name span{color:var(--gold);}
-.brand-sub{color:var(--muted); font-size:.82rem; letter-spacing:.14em; text-transform:uppercase;}
+/* rustige multiselect-labels i.p.v. felle blokken */
+span[data-baseweb="tag"]{background:var(--surface-2) !important; border:1px solid var(--line-2) !important;}
+span[data-baseweb="tag"] span{color:var(--text) !important;}
 
-.kpi{padding:2px 0;}
-.kpi-label{font-size:.72rem; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
-.kpi-value{font-family:'Space Grotesk'; font-size:1.75rem; font-weight:600; line-height:1.25; margin-top:2px; white-space:nowrap;}
-.kpi-value.sm{font-size:1.2rem; white-space:normal; overflow-wrap:anywhere;}
-.kpi-sub{font-size:.85rem; color:var(--muted); margin-top:2px;}
+/* meldingen: ingetogen, alleen een dun gekleurd randje */
+div[data-testid="stAlertContainer"]{background:var(--surface) !important; border:1px solid var(--line) !important;
+  border-left:2px solid var(--subtle) !important; border-radius:6px !important; padding:10px 14px !important;}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]){border-left-color:var(--up) !important;}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]){border-left-color:#c8a24a !important;}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"]){border-left-color:var(--down) !important;}
+div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]){border-left-color:var(--accent) !important;}
+[data-testid^="stAlertContent"], [data-testid^="stAlertContent"] p, [data-testid^="stAlertContent"] strong{color:var(--text) !important;}
+[data-testid^="stAlertContent"] svg, div[data-testid="stAlertContainer"] [data-testid="stAlertDynamicIcon"]{display:none;}
+
+.page-title{font-size:1.45rem; font-weight:600; letter-spacing:-.015em; margin:2px 0 0 0;}
+.page-sub{color:var(--muted); font-size:.9rem; margin-top:2px;}
+.ptitle{font-size:.8rem; font-weight:500; color:var(--muted); margin:0 0 10px 0;}
+
+.kpi-label{font-size:.78rem; font-weight:500; color:var(--muted);}
+.kpi-value{font-size:1.55rem; font-weight:600; letter-spacing:-.02em; line-height:1.3; margin-top:2px; white-space:nowrap;
+  font-variant-numeric:tabular-nums;}
+.kpi-value.sm{font-size:1.1rem; white-space:normal; overflow-wrap:anywhere;}
+.kpi-sub{font-size:.82rem; color:var(--muted); margin-top:2px;}
 .up{color:var(--up) !important;} .down{color:var(--down) !important;} .muted{color:var(--muted) !important;}
-.kv{display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dashed rgba(139,149,167,.15); font-size:.92rem;}
-.kv:last-child{border-bottom:none;} .kv b{font-family:'Space Grotesk'; font-weight:600;}
+.kv{display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line); font-size:.88rem;}
+.kv:last-child{border-bottom:none;} .kv b{font-weight:600; font-variant-numeric:tabular-nums;}
 
-.engine-row{display:grid; grid-template-columns:42px 1fr 1fr 92px; gap:6px; align-items:center; padding:7px 0;
-  border-bottom:1px solid rgba(139,149,167,.10); font-size:.86rem;}
-.engine-row:last-child{border-bottom:none;}
-.engine-head{color:var(--muted); font-size:.68rem; letter-spacing:.1em; text-transform:uppercase; padding-bottom:4px;}
-.tf{font-family:'Space Grotesk'; font-weight:600;}
-.chip{display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; font-size:.76rem; font-weight:600;
-  border:1px solid rgba(139,149,167,.25); color:var(--muted); background:rgba(139,149,167,.08); white-space:nowrap;}
-.chip.bull{color:var(--up); border-color:rgba(38,166,154,.45); background:rgba(38,166,154,.12);}
-.chip.bear{color:var(--down); border-color:rgba(239,83,80,.45); background:rgba(239,83,80,.12);}
-.chip.na{opacity:.5;}
+.row{display:grid; grid-template-columns:40px 1fr 1fr 84px; gap:8px; align-items:center; padding:8px 0;
+  border-bottom:1px solid var(--line); font-size:.85rem;}
+.row:last-child{border-bottom:none;}
+.row.head{color:var(--subtle); font-size:.74rem; padding-bottom:6px;}
+.row.two{grid-template-columns:16px 1fr;}
+.tf{font-weight:600; font-variant-numeric:tabular-nums;}
+.tag{display:inline-block; padding:1px 8px; border-radius:4px; font-size:.75rem; font-weight:500; color:var(--muted);
+  border:1px solid var(--line-2); white-space:nowrap;}
+.tag.bull{color:var(--up); border-color:rgba(38,166,154,.35);}
+.tag.bear{color:var(--down); border-color:rgba(239,83,80,.35);}
+.tag.na{opacity:.45;}
+.dot{display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--subtle); vertical-align:middle;}
+.dot.up{background:var(--up);} .dot.down{background:var(--down);} .dot.accent{background:var(--accent);}
+.dot.warn{background:#c8a24a;}
 
-.decision{border-left:3px solid var(--muted); padding:8px 0 4px 12px; margin-top:4px;}
-.decision.signal{border-color:var(--up);} .decision.wait_confirm{border-color:var(--gold);}
-.decision.wait_poi{border-color:var(--accent);} .decision.none{border-color:var(--muted);}
-.decision-title{font-family:'Space Grotesk'; font-size:1.15rem; font-weight:700; letter-spacing:.03em;}
-.decision-detail{color:#c4cad6; font-size:.88rem; margin-top:4px; line-height:1.45;}
+.status-title{font-weight:600; font-size:1rem; display:flex; align-items:center; gap:8px;}
+.status-detail{color:#b4b4bc; font-size:.86rem; margin-top:6px; line-height:1.5;}
 
-.badge{display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:999px; font-size:.78rem; font-weight:600;
-  border:1px solid var(--line); background:rgba(21,29,43,.9);}
-.badge.ok{color:var(--up); border-color:rgba(38,166,154,.4);}
-.badge.warn{color:var(--gold); border-color:rgba(232,179,57,.4);}
-.badge.info{color:var(--accent); border-color:rgba(59,158,255,.4);}
+.badge{display:inline-flex; align-items:center; gap:6px; padding:2px 9px; border-radius:4px; font-size:.75rem; font-weight:500;
+  color:var(--muted); border:1px solid var(--line-2);}
+.badge.ok{color:var(--up); border-color:rgba(38,166,154,.35);}
+.badge.warn{color:#c8a24a; border-color:rgba(200,162,74,.35);}
+.badge.info{color:var(--muted);}
 
-.mkt{display:flex; justify-content:space-between; align-items:flex-end;}
-.mkt-name{font-weight:600;} .mkt-price{font-family:'Space Grotesk'; font-size:1.25rem; font-weight:600;}
-.coin{display:inline-grid; place-items:center; width:26px; height:26px; border-radius:50%; font-size:.78rem; font-weight:700;
-  margin-right:8px; vertical-align:middle;}
-.coin.BTCUSD{background:rgba(57,135,229,.18); color:#7fb2f0; border:1px solid rgba(57,135,229,.5);}
-.coin.XAUUSD{background:rgba(217,89,38,.16); color:#f09a74; border:1px solid rgba(217,89,38,.5);}
+.meter{height:4px; background:var(--line-2); border-radius:2px; overflow:hidden; margin-top:10px;}
+.meter > div{height:100%; background:var(--text);}
 
-.steps{counter-reset:s; list-style:none; padding:0; margin:0;}
-.steps li{counter-increment:s; position:relative; padding:6px 0 6px 38px; color:#c4cad6;}
-.steps li:before{content:counter(s); position:absolute; left:0; top:4px; width:26px; height:26px; border-radius:50%;
-  display:grid; place-items:center; font-weight:700; font-size:.8rem; color:var(--accent);
-  border:1px solid rgba(59,158,255,.5); background:rgba(59,158,255,.1);}
-div[data-testid="stMetric"]{background:transparent;}
-.stTabs [data-baseweb="tab-list"]{gap:6px;}
+.mkt{display:flex; justify-content:space-between; align-items:baseline;}
+.mkt-name{font-weight:500; color:var(--muted); font-size:.85rem;}
+.mkt-price{font-size:1.15rem; font-weight:600; font-variant-numeric:tabular-nums;}
+
+.steps{list-style:none; padding:0; margin:0; counter-reset:s;}
+.steps li{counter-increment:s; padding:6px 0 6px 28px; position:relative; color:#c4c4cc;}
+.steps li:before{content:counter(s); position:absolute; left:0; top:6px; color:var(--subtle); font-weight:600;
+  font-variant-numeric:tabular-nums;}
 .small-note{color:var(--muted); font-size:.8rem;}
+.hero{font-size:2.1rem; font-weight:600; letter-spacing:-.03em; line-height:1.15;}
+.hero-sub{color:var(--muted); font-size:1rem; margin-top:14px; max-width:520px; line-height:1.6;}
+.feature{padding:12px 0; border-top:1px solid var(--line);}
+.feature b{font-weight:600;} .feature span{color:var(--muted); font-size:.9rem;}
 </style>
 """
 
@@ -109,6 +125,11 @@ def esc(x) -> str:
 
 def ptitle(text: str) -> None:
     st.markdown(f'<div class="ptitle">{esc(text)}</div>', unsafe_allow_html=True)
+
+
+def page_header(title: str, sub: str | None = None) -> None:
+    st.markdown(f'<div class="page-title">{esc(title)}</div>' + (f'<div class="page-sub">{esc(sub)}</div>' if sub else ""),
+                unsafe_allow_html=True)
 
 
 def kpi(label: str, value: str, sub: str | None = None, tone: str | None = None, small: bool = False) -> str:
@@ -137,14 +158,8 @@ def money(v: float, decimals: int | None = None) -> str:
 
 
 def price_fmt(v: float) -> str:
-    return f"{v:,.2f}"
+    return f"{v:,.5f}" if abs(v) < 10 else f"{v:,.2f}"
 
 
 def html_block(s: str) -> None:
     st.markdown(s, unsafe_allow_html=True)
-
-
-def brand() -> None:
-    html_block('<div class="brand"><div class="brand-logo">AI</div><div>'
-               '<div class="brand-name">AI <span>Trading</span> Tool</div>'
-               '<div class="brand-sub">Backtest-platform · jouw strategie · jouw data</div></div></div>')

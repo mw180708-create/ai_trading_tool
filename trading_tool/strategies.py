@@ -1,6 +1,6 @@
 """Strategieën als data: twee typen, sjablonen, validatie en één run-functie.
 
-Type "smc"   : Smart Money / POI-model (het Trading Plan 2026-2028), volledig instelbaar.
+Type "smc"   : Smart Money / POI-model (multi-timeframe bias, POI-zones, confirmatie), volledig instelbaar.
 Type "rules" : zelf samengestelde regels met indicatoren (zie rules_engine.py).
 """
 from __future__ import annotations
@@ -55,12 +55,6 @@ def _op(ind, tf=None, **params):
 
 
 TEMPLATES: dict[str, dict] = {
-    "trading_plan": {
-        "name": "Trading Plan 2026-2028", "type": "smc", "risk_pct": 1.0,
-        "description": "Multi-timeframe bias (liquiditeit + balance level), POI-in-POI entry, SL op 1H protected "
-                       "level, TP op de eerstvolgende liquiditeit, BE bij 2R (swing) / 4R (intraday).",
-        "params": smc_defaults(),
-    },
     "ema_cross": {
         "name": "EMA-crossover 20/50 met trendfilter", "type": "rules", "risk_pct": 1.0,
         "description": "Long als EMA 20 boven EMA 50 kruist en de prijs boven de 1D EMA 200 staat (short andersom).",
@@ -99,6 +93,12 @@ TEMPLATES: dict[str, dict] = {
                 {"left": _op("close"), "op": "<", "right": _op("lowest", length=20)}]},
             "stop": {"type": "atr", "value": 2.0, "length": 20}, "target": {"type": "none", "value": 0},
             "trailing_atr": 3.0, "trailing_length": 20}),
+    },
+    "smc_poi": {
+        "name": "Smart Money – multi-timeframe POI", "type": "smc", "risk_pct": 1.0,
+        "description": "Bias uit liquiditeit en marktstructuur op meerdere timeframes, entry na confirmatie in een "
+                       "POI-zone (POI in POI), SL op het protected level, TP op de volgende liquiditeit.",
+        "params": smc_defaults(),
     },
     "blank": {
         "name": "Nieuwe strategie (leeg)", "type": "rules", "risk_pct": 1.0, "description": "",

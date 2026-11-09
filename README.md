@@ -1,27 +1,27 @@
-# AI Trading Tool – Backtester Trading Plan 2026-2028
+# wng
 
-Python backtester die de regels uit het Trading Plan 2026-2028 strikt en emotieloos toepast op
-**BTCUSD** en **XAUUSD**: Bias (MTF confluence) → POI → POI-in-POI confirmation → Entry → BE/TP/SL.
+Backtest-platform: stel een strategie samen zonder te programmeren, upload je eigen koersdata en zie hoe de
+strategie in het verleden had gepresteerd.
 
-## 🌐 Het platform (website)
+## Het platform (website)
 
 Een backtest-platform waarop **iedereen** met een eigen account zijn **eigen strategie** test op **eigen data**.
 
 | Pagina | Wat je er doet |
 |---|---|
-| 👋 **Welkom** | Account maken, inloggen of eerst als gast proberen (demo-data) |
-| 🏠 **Dashboard** | Grafiek (1m t/m 1W) met je trades, actuele stand van je strategie (Bias Engine of voorwaarden), performance |
-| 🧠 **Strategieën** | Strategie bouwen zonder code (sjablonen of leeg), bewerken, dupliceren, delen met de community, community-strategieën kopiëren |
-| 📁 **Data** | Eigen bibliotheek · gedeelde bibliotheek · CSV's uploaden (elke markt) · crypto downloaden · demo |
-| ▶️ **Backtest** | Strategie + markten + periode + kosten per markt kiezen en draaien |
-| 📊 **Resultaten** / 📋 **Trades** | KPI's, equity curve, per maand, uitsplitsingen, elke trade op de grafiek; laatste 30 runs bewaard |
+| **Inloggen** | Account maken, inloggen of eerst als gast proberen (demo-data) |
+| **Dashboard** | Grafiek (1m t/m 1W) met je trades, actuele stand van je strategie (Bias Engine of voorwaarden), performance |
+| **Strategieën** | Strategie bouwen zonder code (sjablonen of leeg), bewerken, dupliceren, delen met de community, community-strategieën kopiëren |
+| **Data** | Eigen bibliotheek · gedeelde bibliotheek · CSV's uploaden (elke markt) · crypto downloaden · demo |
+| **Backtest** | Strategie + markten + periode + kosten per markt kiezen en draaien |
+| **Resultaten** / **Trades** | KPI's, equity curve, per maand, uitsplitsingen, elke trade op de grafiek; laatste 30 runs bewaard |
 
 **Strategie-typen**
 - *Indicatoren & regels*: SMA, EMA, RSI, ATR, MACD, Bollinger, Stochastic, hoogste/laagste N candles, % verandering, vaste
   getallen; vergelijkingen (>, <, kruist boven/onder) op elke timeframe; SL (ATR / % / swing / vast), TP (RR / ATR / % / vast /
   geen), break-even, trailing stop, max. duur, exit bij tegengesteld signaal, handelsuren.
-- *Smart Money (POI & liquiditeit)*: het Trading Plan 2026-2028, volledig instelbaar (combinaties, POI-timeframes,
-  confirmatie, RR, break-even).
+- *Smart Money (POI & liquiditeit)*: multi-timeframe bias, POI-zones en confirmatie op een lagere timeframe,
+  volledig instelbaar (combinaties, POI-timeframes, confirmatie, RR, break-even).
 
 **Accounts & privacy**: wachtwoorden als scrypt-hash; per gebruiker een eigen map `data/store/users/<naam>/`;
 alleen strategie-*regels* worden gedeeld, nooit data of resultaten. Na 5 foute inlogpogingen 5 minuten blokkade.

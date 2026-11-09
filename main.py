@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backtest het Trading Plan 2026-2028 op BTCUSD en XAUUSD.
+"""wng - command line: backtest het Smart Money / POI-model op je eigen CSV-data.
 
 Voorbeelden
 -----------
@@ -28,7 +28,6 @@ from trading_tool.data_loader import discover_files, load_symbol
 from trading_tool.metrics import print_report, save_outputs
 from trading_tool.synthetic import demo_dataset
 
-SYMBOLS = ["BTCUSD", "XAUUSD"]
 
 
 def parse_asset(spec: str) -> tuple[str, dict[str, str]]:
@@ -38,11 +37,11 @@ def parse_asset(spec: str) -> tuple[str, dict[str, str]]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Trading Plan 2026-2028 backtester (BTCUSD / XAUUSD)")
+    ap = argparse.ArgumentParser(description="wng backtester (Smart Money / POI-model)")
     ap.add_argument("--demo", action="store_true", help="draai op synthetische data")
     ap.add_argument("--data-dir", default="data", help="map met SYMBOOL_TF.csv bestanden")
     ap.add_argument("--asset", action="append", default=[], help="SYMBOOL:TF=pad,TF=pad (herhaalbaar)")
-    ap.add_argument("--symbols", default=",".join(SYMBOLS), help="welke symbolen (default BTCUSD,XAUUSD)")
+    ap.add_argument("--symbols", default="", help="welke markten, bv. EURUSD,BTCUSD (leeg = alles in de map)")
     ap.add_argument("--start", help="start backtest (oudere data = warm-up), bv. 2024-01-01")
     ap.add_argument("--end", help="einde backtest, bv. 2025-12-31")
     ap.add_argument("--balance", type=float, default=100_000, help="startbalans per funded account")
@@ -58,19 +57,19 @@ def main(argv: list[str] | None = None) -> int:
     strategy = StrategyConfig(min_rr=args.min_rr, adaptive_rr=not args.no_adaptive_rr,
                               confirmation_mode=args.confirmation, tp_source=args.tp_source)
     risk = RiskConfig(initial_balance=args.balance, risk_per_trade=args.risk)
-    wanted = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
+    wanted = [s.strip().upper() for s in args.symbols.split(",") if s.strip()] or None
 
     # ---------------- data ----------------
     datasets = []
     if args.demo:
         print("DEMO-modus: synthetische data (resultaten zeggen NIETS over de echte markt)\n")
-        for i, sym in enumerate(wanted):
+        for i, sym in enumerate(wanted or ["BTCUSD", "EURUSD"]):
             datasets.append(demo_dataset(sym, seed=i))
     else:
         specs = dict(parse_asset(a) for a in args.asset)
         if not specs:
             specs = {s: {tf: str(p) for tf, p in f.items()} for s, f in discover_files(args.data_dir).items()}
-        specs = {s: f for s, f in specs.items() if s in wanted}
+        specs = {s: f for s, f in specs.items() if wanted is None or s in wanted}
         if not specs:
             print(f"Geen data gevonden in '{args.data_dir}'. Zet bv. BTCUSD_1m.csv / XAUUSD_1D.csv daar neer,\n"
                   f"gebruik --asset, draai download_data.py, of probeer --demo.")

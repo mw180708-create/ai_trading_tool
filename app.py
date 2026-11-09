@@ -1,4 +1,4 @@
-"""AI Trading Tool - backtest-platform voor iedereen (Streamlit).
+"""wng - backtest-platform (Streamlit).
 
 Lokaal starten:   streamlit run app.py     (of dubbelklik START_WEBSITE.bat)
 Online:           share.streamlit.io -> repo mw180708-create/ai_trading_tool -> streamlit_app.py
@@ -11,7 +11,8 @@ from pathlib import Path
 
 import streamlit as st
 
-st.set_page_config(page_title="AI Trading Tool", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
+_ICON = Path(__file__).resolve().parent / "assets" / "wng-icon.png"
+st.set_page_config(page_title="wng", page_icon=str(_ICON), layout="wide", initial_sidebar_state="collapsed")
 
 _ROOT = Path(__file__).resolve().parent
 _PACKAGES = ("trading_tool", "webapp")
@@ -54,7 +55,7 @@ def safe(fn):
 
 def account_menu() -> None:
     name = S.display_name()
-    with st.popover(f"👤 {name}", width="stretch"):
+    with st.popover(name, width="stretch"):
         if S.is_guest():
             st.caption("Je bent ingelogd als gast. Niets wordt blijvend bewaard.")
             if st.button("Account maken / inloggen", width="stretch", type="primary"):
@@ -75,28 +76,40 @@ def account_menu() -> None:
             st.rerun()
 
 
+SUBTITLES = {
+    "dashboard": "Overzicht van je markt en strategie",
+    "strategieen": "Bouw, beheer en deel strategieën",
+    "data": "Je koersdata en de gedeelde bibliotheek",
+    "backtest": "Test een strategie op historische data",
+    "resultaten": "Prestaties van je backtests",
+    "trades": "Elke trade in detail",
+    "uitleg": "Hoe wng werkt",
+}
+
 theme.inject()
+st.logo(str(theme.LOGO), size="large", icon_image=str(theme.LOGO))
 nav.PAGES.clear()
 if S.logged_in():
     nav.PAGES.update({
-        "dashboard": st.Page(safe(dashboard.render), title="Dashboard", icon="🏠", url_path="dashboard", default=True),
-        "strategies": st.Page(safe(strategies.render), title="Strategieën", icon="🧠", url_path="strategieen"),
-        "data": st.Page(safe(data.render), title="Data", icon="📁", url_path="data"),
-        "backtest": st.Page(safe(backtest.render), title="Backtest", icon="▶️", url_path="backtest"),
-        "results": st.Page(safe(results.render), title="Resultaten", icon="📊", url_path="resultaten"),
-        "trades": st.Page(safe(trades.render), title="Trades", icon="📋", url_path="trades"),
-        "help": st.Page(safe(help_page.render), title="Uitleg", icon="ℹ️", url_path="uitleg"),
+        "dashboard": st.Page(safe(dashboard.render), title="Dashboard", url_path="dashboard", default=True),
+        "strategies": st.Page(safe(strategies.render), title="Strategieën", url_path="strategieen"),
+        "data": st.Page(safe(data.render), title="Data", url_path="data"),
+        "backtest": st.Page(safe(backtest.render), title="Backtest", url_path="backtest"),
+        "results": st.Page(safe(results.render), title="Resultaten", url_path="resultaten"),
+        "trades": st.Page(safe(trades.render), title="Trades", url_path="trades"),
+        "help": st.Page(safe(help_page.render), title="Uitleg", url_path="uitleg"),
     })
 else:
     nav.PAGES.update({
-        "login": st.Page(safe(login.render), title="Welkom", icon="👋", url_path="welkom", default=True),
-        "help": st.Page(safe(help_page.render), title="Uitleg", icon="ℹ️", url_path="uitleg"),
+        "login": st.Page(safe(login.render), title="Inloggen", url_path="welkom", default=True),
+        "help": st.Page(safe(help_page.render), title="Uitleg", url_path="uitleg"),
     })
 page = st.navigation(list(nav.PAGES.values()), position="top")
-head = st.columns([4, 1])
-with head[0]:
-    theme.brand()
 if S.logged_in():
+    head = st.columns([7, 1])
+    with head[0]:
+        theme.page_header(page.title, SUBTITLES.get(page.url_path))
     with head[1]:
         account_menu()
+    st.write("")
 page.run()

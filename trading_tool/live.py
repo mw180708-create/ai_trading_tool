@@ -1,4 +1,4 @@
-"""Actuele stand van het Trading Plan op de laatste beschikbare data ("Bias Engine").
+"""Actuele stand van een Smart Money / POI-strategie op de laatste beschikbare data.
 
 Geeft per timeframe Liquiditeit / Balance level / Bias, de timeframe-match, de actieve POI's
 en een beslissing volgens de regels (geen trade / wacht op POI / wacht op confirmatie / signaal).
@@ -124,9 +124,9 @@ def analyze_live(mtf: MultiTimeframeData, cfg: StrategyConfig | None = None) -> 
                                       dist, touched, ctf))
 
     # ---------- beslissing ----------
-    name = {1: "BULLISH", -1: "BEARISH"}
+    name = {1: "Bullish", -1: "Bearish"}
     if direction == 0:
-        state.status, state.decision = "none", "GEEN TRADE"
+        state.status, state.decision = "none", "Geen trade"
         state.detail = "Geen geldige timeframe-match (bias 50/50). Volgens het plan wordt er niet gehandeld."
         return state
 
@@ -139,18 +139,18 @@ def analyze_live(mtf: MultiTimeframeData, cfg: StrategyConfig | None = None) -> 
         an_c = analyses.get(p.confirmation_tf)
         sig = an_c is not None and int(an_c.bos[-1]) == direction
         if sig:
-            state.status, state.decision = "signal", f"{name[direction]} SIGNAAL"
+            state.status, state.decision = "signal", f"{name[direction]} signaal"
             state.detail += (f"{p.tf} POI geraakt én {p.confirmation_tf} balance shift op de laatste candle. "
                              "Entry volgens de regels (SL op 1H protected level, TP op eerstvolgende liquiditeit).")
         else:
-            state.status, state.decision = "wait_confirm", "WACHT OP CONFIRMATIE"
+            state.status, state.decision = "wait_confirm", "Wacht op confirmatie"
             state.detail += f"Prijs in/bij de {p.tf} POI → wacht op een {p.confirmation_tf} balance shift."
     elif relevant:
         p = min(relevant, key=lambda x: abs(x.distance_pct))
-        state.status, state.decision = "wait_poi", f"{name[direction]} — WACHT OP POI"
+        state.status, state.decision = "wait_poi", f"{name[direction]} – wacht op POI"
         state.detail += (f"Dichtstbijzijnde {p.tf} POI: {p.bottom:,.2f} – {p.top:,.2f} "
                          f"({abs(p.distance_pct):.2f}% van de prijs).")
     else:
-        state.status, state.decision = "wait_poi", f"{name[direction]} — GEEN POI"
+        state.status, state.decision = "wait_poi", f"{name[direction]} – nog geen POI"
         state.detail += f"Er is nog geen geldige {name[direction].lower()} POI. Wacht op een nieuwe balance shift."
     return state

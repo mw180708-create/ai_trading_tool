@@ -109,7 +109,7 @@ def breakdown_by(trades: pd.DataFrame, col: str) -> pd.DataFrame:
 def print_report(results: list[BacktestResult]) -> pd.DataFrame:
     report = build_report(results)
     line = "=" * 78
-    print(f"\n{line}\n  BACKTEST RESULTATEN - Trading Plan 2026-2028\n{line}")
+    print(f"\n{line}\n  wng · backtest-resultaten\n{line}")
     if "Trades" not in report.index or report.loc["Trades"].fillna(0).sum() == 0:
         print("  Geen trades gegenereerd.")
     printable = format_report(report)
@@ -118,7 +118,7 @@ def print_report(results: list[BacktestResult]) -> pd.DataFrame:
     all_trades = [r.trades for r in results if not r.trades.empty]
     if all_trades:
         t = pd.concat(all_trades, ignore_index=True)
-        print(f"\n--- Per trade type (Swing = M/W POI, Intraday = D/4H/1H POI, Scalp = 1D+4H+1H match) ---")
+        print("\n--- Per trade type ---")
         print(breakdown_by(t, "trade_type").round(2).to_string())
         print("\n--- Per POI timeframe ---")
         print(breakdown_by(t, "poi_tf").round(2).to_string())

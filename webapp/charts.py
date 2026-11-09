@@ -10,7 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit.components.v1 as components
 
-from .theme import ACCENT, DOWN, GOLD, NEUTRAL, UP
+from .theme import DOWN, EMA_FAST, EMA_SLOW, NEUTRAL, UP
 
 LIB = Path(__file__).resolve().parents[1] / "assets" / "lightweight-charts.standalone.production.js"
 
@@ -34,11 +34,11 @@ def candles_payload(df: pd.DataFrame, max_bars: int = 3000, emas: tuple[int, ...
                        for a, b, e, f, g in zip(t, o, h, l, c)]}
     vol = d["volume"].to_numpy(float) if "volume" in d else np.zeros(len(d))
     if np.nansum(vol) > 0:
-        out["volume"] = [{"time": int(a), "value": float(v), "color": "rgba(38,166,154,.35)" if g >= b
-                          else "rgba(239,83,80,.35)"} for a, v, b, g in zip(t, vol, o, c)]
+        out["volume"] = [{"time": int(a), "value": float(v), "color": "rgba(38,166,154,.22)" if g >= b
+                          else "rgba(239,83,80,.22)"} for a, v, b, g in zip(t, vol, o, c)]
     out["emas"] = [{"name": f"EMA {n}", "color": col,
                     "data": [{"time": int(a), "value": float(v)} for a, v in zip(t, ema_full[n].iloc[-max_bars:].to_numpy())]}
-                   for n, col in zip(emas, (GOLD, ACCENT))]
+                   for n, col in zip(emas, (EMA_FAST, EMA_SLOW))]
     return out
 
 
@@ -64,14 +64,14 @@ def trade_markers(trades: pd.DataFrame, index: pd.DatetimeIndex) -> list[dict]:
                 long = r["direction"] == "LONG"
                 out.append({"time": t, "position": "belowBar" if long else "aboveBar",
                             "color": UP if long else DOWN, "shape": "arrowUp" if long else "arrowDown",
-                            "text": f"{'Long' if long else 'Short'} · {r['poi_tf']}"})
+                            "text": ""})
         if first <= xt <= last + pd.Timedelta(days=40):
             t = snap_time(index, xt - pd.Timedelta(seconds=1))
             if t is not None:
                 rr = float(r["r_multiple"])
                 out.append({"time": t, "position": "aboveBar" if r["direction"] == "LONG" else "belowBar",
                             "color": UP if rr > 0.05 else (DOWN if rr < -0.05 else NEUTRAL), "shape": "circle",
-                            "text": f"{r['exit_reason']} {rr:+.1f}R"})
+                            "text": f"{rr:+.1f}R"})
     return sorted(out, key=lambda m: m["time"])
 
 
@@ -85,7 +85,7 @@ def tv_chart(payload: dict, height: int = 520, markers: list[dict] | None = None
     html = f"""
 <div id="wrap" style="position:relative;width:100%;height:{height}px;">
   <div id="chart" style="position:absolute;inset:0;"></div>
-  <div id="legend" style="position:absolute;left:10px;top:6px;z-index:5;font:12px Inter,system-ui,sans-serif;color:#c4cad6;pointer-events:none;"></div>
+  <div id="legend" style="position:absolute;left:10px;top:6px;z-index:5;font:12px Inter,system-ui,sans-serif;color:#b4b4bc;pointer-events:none;"></div>
 </div>
 <script>{_lib_js()}</script>
 <script>
@@ -94,13 +94,13 @@ const C = {json.dumps(cfg)};
 const el = document.getElementById('chart');
 const chart = LightweightCharts.createChart(el, {{
   autoSize: true,
-  layout: {{ background: {{ type: 'solid', color: 'rgba(0,0,0,0)' }}, textColor: '#8b95a7',
-             fontFamily: 'Inter, system-ui, sans-serif', fontSize: 11 }},
-  grid: {{ vertLines: {{ color: 'rgba(110,150,230,0.06)' }}, horzLines: {{ color: 'rgba(110,150,230,0.06)' }} }},
-  rightPriceScale: {{ borderColor: 'rgba(110,150,230,0.18)' }},
-  timeScale: {{ borderColor: 'rgba(110,150,230,0.18)', timeVisible: true, secondsVisible: false, rightOffset: 6 }},
-  crosshair: {{ mode: 0, vertLine: {{ color: 'rgba(59,158,255,0.45)', labelBackgroundColor: '#1d2a40' }},
-                horzLine: {{ color: 'rgba(59,158,255,0.45)', labelBackgroundColor: '#1d2a40' }} }},
+  layout: {{ background: {{ type: 'solid', color: 'rgba(0,0,0,0)' }}, textColor: '#8b8b94',
+             fontFamily: 'Inter, -apple-system, Segoe UI, sans-serif', fontSize: 11 }},
+  grid: {{ vertLines: {{ color: 'rgba(255,255,255,0.035)' }}, horzLines: {{ color: 'rgba(255,255,255,0.035)' }} }},
+  rightPriceScale: {{ borderColor: '#222226' }},
+  timeScale: {{ borderColor: '#222226', timeVisible: true, secondsVisible: false, rightOffset: 6 }},
+  crosshair: {{ mode: 0, vertLine: {{ color: 'rgba(236,236,238,0.25)', labelBackgroundColor: '#26262b' }},
+                horzLine: {{ color: 'rgba(236,236,238,0.25)', labelBackgroundColor: '#26262b' }} }},
 }});
 const s = chart.addCandlestickSeries({{ upColor: C.up, downColor: C.down, borderVisible: false,
   wickUpColor: C.up, wickDownColor: C.down }});
@@ -123,15 +123,15 @@ if (C.visible) {{ try {{ chart.timeScale().setVisibleRange({{ from: C.visible[0]
 else if (n > C.showBars) chart.timeScale().setVisibleLogicalRange({{ from: n - C.showBars, to: n + 4 }});
 else chart.timeScale().fitContent();
 const legend = document.getElementById('legend');
-const fmt = x => x == null ? '' : x.toLocaleString('en-US', {{ maximumFractionDigits: 2, minimumFractionDigits: 2 }});
+const fmt = x => x == null ? '' : x.toLocaleString('en-US', Math.abs(x) < 10 ? {{ maximumFractionDigits: 5, minimumFractionDigits: 5 }} : {{ maximumFractionDigits: 2, minimumFractionDigits: 2 }});
 function setLegend(bar) {{
   if (!bar) bar = P.candles[n - 1];
   if (!bar) return;
   const col = bar.close >= bar.open ? C.up : C.down;
-  let h = `<span style="color:#8b95a7">O</span> <b style="color:${{col}}">${{fmt(bar.open)}}</b> &nbsp;` +
-          `<span style="color:#8b95a7">H</span> <b style="color:${{col}}">${{fmt(bar.high)}}</b> &nbsp;` +
-          `<span style="color:#8b95a7">L</span> <b style="color:${{col}}">${{fmt(bar.low)}}</b> &nbsp;` +
-          `<span style="color:#8b95a7">C</span> <b style="color:${{col}}">${{fmt(bar.close)}}</b>`;
+  let h = `<span style="color:#8b8b94">O</span> <b style="color:${{col}}">${{fmt(bar.open)}}</b> &nbsp;` +
+          `<span style="color:#8b8b94">H</span> <b style="color:${{col}}">${{fmt(bar.high)}}</b> &nbsp;` +
+          `<span style="color:#8b8b94">L</span> <b style="color:${{col}}">${{fmt(bar.low)}}</b> &nbsp;` +
+          `<span style="color:#8b8b94">C</span> <b style="color:${{col}}">${{fmt(bar.close)}}</b>`;
   emaSeries.forEach(([e]) => {{ h += ` &nbsp; <span style="color:${{e.color}}">● ${{e.name}}</span>`; }});
   legend.innerHTML = h;
 }}
@@ -149,28 +149,14 @@ def style(fig: go.Figure, height: int = 320, title: str | None = None, legend: b
     fig.update_layout(
         template="plotly_dark", height=height, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=8, r=8, t=40 if title else 10, b=8),
-        title=dict(text=title, x=0, font=dict(size=13, color="#c4cad6")) if title else None,
-        font=dict(family="Inter, system-ui, sans-serif", size=11, color="#8b95a7"),
+        title=dict(text=title, x=0, font=dict(size=13, color="#b4b4bc")) if title else None,
+        font=dict(family="Inter, -apple-system, Segoe UI, sans-serif", size=11, color="#8b8b94"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(0,0,0,0)"),
-        showlegend=legend, hoverlabel=dict(bgcolor="#151d2b", bordercolor="#2a3a55", font=dict(color="#e6e9ef")),
+        showlegend=legend, hoverlabel=dict(bgcolor="#161618", bordercolor="#2c2c31", font=dict(color="#ececee")),
     )
-    fig.update_xaxes(showgrid=False, linecolor="rgba(110,150,230,.18)", zeroline=False)
-    fig.update_yaxes(gridcolor="rgba(110,150,230,.08)", zeroline=False)
+    fig.update_xaxes(showgrid=False, linecolor="#26262b", zeroline=False)
+    fig.update_yaxes(gridcolor="rgba(255,255,255,.05)", zeroline=False)
     return fig
-
-
-def gauge(score: int, height: int = 190) -> go.Figure:
-    label = "Bullish" if score > 55 else ("Bearish" if score < 45 else "Neutraal")
-    color = UP if score > 55 else (DOWN if score < 45 else NEUTRAL)
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=score, number=dict(font=dict(size=34, color="#e6e9ef", family="Space Grotesk")),
-        gauge=dict(axis=dict(range=[0, 100], tickwidth=0, tickcolor="rgba(0,0,0,0)", tickfont=dict(size=10)),
-                   bar=dict(color=color, thickness=0.28), bgcolor="rgba(0,0,0,0)", borderwidth=0,
-                   steps=[dict(range=[0, 45], color="rgba(239,83,80,.16)"),
-                          dict(range=[45, 55], color="rgba(139,149,167,.14)"),
-                          dict(range=[55, 100], color="rgba(38,166,154,.16)")])))
-    fig.add_annotation(x=0.5, y=0.02, text=f"<b>{label}</b>", showarrow=False, font=dict(size=13, color=color))
-    return style(fig, height, legend=False).update_layout(margin=dict(l=30, r=30, t=18, b=4))
 
 
 def sparkline(values: pd.Series, color: str, height: int = 64) -> go.Figure:

@@ -11,7 +11,7 @@ from trading_tool.metrics import breakdown_by, compute_metrics, format_report
 from .. import nav
 from .. import state as S
 from ..charts import PLOTLY_CONFIG, style
-from ..theme import DOWN, NEUTRAL, SERIES, UP, html_block, kpi, money, ptitle, tone_of
+from ..theme import DOWN, NEUTRAL, UP, html_block, kpi, money, ptitle, series_color, tone_of
 
 PCT = st.column_config.NumberColumn(format="%.1f%%")
 R2 = st.column_config.NumberColumn(format="%.2f")
@@ -28,7 +28,7 @@ def run_picker(key: str) -> None:
 
     def label(rid: str) -> str:
         m = meta.get(rid, {})
-        return (f"{str(m.get('run_at', rid))[:16]} · {m.get('strategy_name', 'Trading Plan')} · "
+        return (f"{str(m.get('run_at', rid))[:16]} · {m.get('strategy_name', 'Strategie')} · "
                 f"{', '.join(m.get('symbols') or list((m.get('initial') or {}).keys()))}")
     c1, c2 = st.columns([4, 1])
     pick = c1.selectbox("Backtest", ids, index=ids.index(cur), format_func=label, key=f"{key}_run",
@@ -36,7 +36,7 @@ def run_picker(key: str) -> None:
     if pick != st.session_state.get("run_id"):
         S.select_run(pick)
         st.rerun()
-    if c2.button("🗑  Verwijderen", key=f"{key}_delrun", width="stretch"):
+    if c2.button("Verwijderen", key=f"{key}_delrun", width="stretch"):
         S.delete_run(pick)
         S.flash("Backtest verwijderd.", "warning")
         st.rerun()
@@ -47,7 +47,7 @@ def no_results(key: str = "res") -> bool:
     res = S.get_results()
     if res is None:
         st.info("Nog geen resultaten. Start eerst een backtest.")
-        if st.button("▶  Naar Backtest", type="primary"):
+        if st.button("Naar backtest", type="primary"):
             nav.go("backtest")
         return True
     if res.meta.get("demo"):
@@ -56,7 +56,6 @@ def no_results(key: str = "res") -> bool:
 
 
 def render() -> None:
-    st.markdown("## 📊 Resultaten")
     S.show_flash()
     if no_results("res"):
         return
@@ -66,7 +65,7 @@ def render() -> None:
     view = top[0].segmented_control("Bekijk", views, default=views[-1], key="res_view",
                                     label_visibility="collapsed") or views[-1]
     if res.meta.get("run_at"):
-        top[1].markdown(f"<div style='text-align:right' class='small-note'>Strategie <b>{res.meta.get('strategy_name', 'Trading Plan')}</b>"
+        top[1].markdown(f"<div style='text-align:right' class='small-note'>Strategie <b>{res.meta.get('strategy_name', 'Strategie')}</b>"
                         f" · {res.meta['run_at']}</div>", unsafe_allow_html=True)
     trades, equity, initial = res.trades_for(view), res.equity_for(view), res.initial_for(view)
     m = compute_metrics(trades, equity, initial)
@@ -89,14 +88,14 @@ def render() -> None:
             html_block(html)
 
     with st.container(key="panel_equity"):
-        ptitle("Equity curve · rendement % na elke gesloten trade")
+        ptitle("Rendement (%) na elke gesloten trade")
         fig = go.Figure()
         names = res.views() if view == "TOTAAL" else [view]
         for s in names:
             e = res.equity_for(s)
             pct = (e / res.initial_for(s) - 1) * 100
             fig.add_trace(go.Scatter(x=e.index, y=pct.values, name=s, mode="lines", customdata=e.values,
-                                     line=dict(color=SERIES.get(s, "#c3c2b7"), width=2.2 if s == "TOTAAL" else 1.6,
+                                     line=dict(color=series_color(s, res.symbols), width=1.8 if s == "TOTAAL" else 1.4,
                                                shape="hv"),
                                      hovertemplate="%{y:+.2f}% (%{customdata:$,.0f})<extra>" + s + "</extra>"))
         fig.add_hline(y=0, line=dict(color="rgba(139,149,167,.4)", width=1))
