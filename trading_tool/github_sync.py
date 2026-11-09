@@ -5,11 +5,12 @@ Nodig: een fine-grained Personal Access Token met "Contents: Read and write" op 
 from __future__ import annotations
 
 import base64
+import os
 from dataclasses import dataclass
 
 import requests
 
-API = "https://api.github.com"
+API = os.environ.get("AI_TRADING_GITHUB_API", "https://api.github.com")
 
 
 class GitHubError(RuntimeError):
@@ -44,15 +45,35 @@ class GitHubSync:
         return r.json() if r.content else {}
 
     def check(self) -> tuple[bool, str]:
-        """Controleer token + schrijfrechten."""
+        """Controleer token, toegang tot de repository én schrijfrechten (met duidelijke Nederlandse uitleg)."""
         try:
-            info = self._req("GET", "")
-        except (GitHubError, requests.RequestException) as e:
-            return False, str(e)
-        perms = info.get("permissions", {})
-        if perms and not (perms.get("push") or perms.get("admin")):
-            return False, "Token heeft geen schrijfrechten (Contents: Read and write) op deze repository."
-        return True, f"Verbonden met {info.get('full_name', self.repo)}"
+            r = self.session.request("GET", f"{API}/repos/{self.repo}", timeout=self.timeout)
+        except requests.RequestException as e:
+            return False, f"GitHub is niet bereikbaar ({e})."
+        if r.status_code == 401:
+            return False, ("GitHub accepteert het token niet: het is ongeldig, verlopen of niet volledig gekopieerd. "
+                           "Een token begint met 'github_pat_' of 'ghp_'. Maak eventueel een nieuw token.")
+        if r.status_code in (403, 404):
+            return False, (f"Het token heeft geen toegang tot de repository '{self.repo}'. Controleer de naam van de "
+                           "repository en kies bij het token 'Repository access' → ai_trading_tool "
+                           "(of gebruik een classic token met vinkje 'repo').")
+        if r.status_code >= 400:
+            return False, f"GitHub gaf een fout ({r.status_code}): {r.text[:200]}"
+        info = r.json() if r.content else {}
+        # schrijfrecht echt testen: een los (ongebruikt) blob-object aanmaken verandert niets aan de repo
+        try:
+            w = self.session.request("POST", f"{API}/repos/{self.repo}/git/blobs", timeout=self.timeout,
+                                     json={"content": "dGVzdA==", "encoding": "base64"})
+        except requests.RequestException as e:
+            return False, f"GitHub is niet bereikbaar ({e})."
+        if w.status_code in (403, 404):
+            return False, ("Het token mag lezen maar niet schrijven. Zet bij het token 'Repository permissions' → "
+                           "'Contents' op 'Read and write' (classic token: vinkje 'repo').")
+        if w.status_code == 409:
+            return False, "De repository is leeg; zet er eerst minstens één bestand in."
+        if w.status_code >= 400:
+            return False, f"Schrijftest mislukt ({w.status_code}): {w.text[:200]}"
+        return True, f"Verbonden met {info.get('full_name', self.repo)} - lezen en schrijven werkt."
 
     def commit_files(self, files: dict[str, bytes | None], message: str) -> str:
         """Schrijf (bytes) of verwijder (None) meerdere bestanden in één commit. Retourneert commit-sha."""

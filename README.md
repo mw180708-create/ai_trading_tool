@@ -19,14 +19,13 @@ Alles via de browser, in een donker trading-dashboard:
 1. https://share.streamlit.io → **Continue with GitHub** → **Create app**.
 2. Repository `mw180708-create/ai_trading_tool`, branch `main`, main file `streamlit_app.py` → **Deploy**.
 
-**Data blijvend bewaren (aanbevolen):** de online website wist zijn eigen schijf bij een herstart. Koppel daarom GitHub:
-1. Maak een token op https://github.com/settings/personal-access-tokens/new → alleen repository *ai_trading_tool* →
-   *Repository permissions* → **Contents: Read and write**.
-2. share.streamlit.io → je app → **⋮ → Settings → Secrets**:
-   ```toml
-   GITHUB_TOKEN = "github_pat_..."
-   GITHUB_REPO = "mw180708-create/ai_trading_tool"
-   ```
+**Data blijvend bewaren (aanbevolen):** de online website wist zijn eigen schijf bij een herstart. Koppel daarom GitHub
+via **📁 Data → GitHub koppelen**: maak een token (classic token met vinkje `repo` is het makkelijkst), plak het op de
+website en klik *Testen & koppelen*. Je krijgt dan precies de tekst die je in Streamlit → **⋮ → Settings → Secrets** plakt:
+```toml
+GITHUB_TOKEN = "ghp_..."
+GITHUB_REPO = "mw180708-create/ai_trading_tool"
+```
 Uploads, downloads en backtest-resultaten worden dan opgeslagen in `data/store/` van de repository (per jaar, Parquet).
 
 **Lokaal op je eigen pc:** dubbelklik `START_WEBSITE.bat` (Windows) of `streamlit run app.py`. Lokaal blijft data

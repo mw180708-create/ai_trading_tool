@@ -44,10 +44,9 @@ laatste balance shift) en de **Bias** (beide gelijk). De **bias-score** (0-100) 
 #### Data blijvend bewaren met GitHub
 Status: **{"gekoppeld ✓" if S.store().synced else "niet gekoppeld (alleen tijdelijk bewaard op de online website)"}**
 
-1. Maak een token: **https://github.com/settings/personal-access-tokens/new** → repository **ai_trading_tool** →
-   *Repository permissions* → **Contents: Read and write** → **Generate token**.
-2. **share.streamlit.io** → je app → **⋮ → Settings → Secrets** → plak:
+Ga naar **📁 Data** → **GitHub koppelen**. Daar maak je in 3 stappen een token, plak je het op de website en
+test je het meteen. Je krijgt precies te zien wat je in Streamlit → Settings → **Secrets** moet plakken:
 """)
-        st.code(f'GITHUB_TOKEN = "github_pat_..."\nGITHUB_REPO = "{S.DEFAULT_REPO}"', language="toml")
+        st.code(f'GITHUB_TOKEN = "ghp_..."\nGITHUB_REPO = "{S.DEFAULT_REPO}"', language="toml")
         st.caption("Je data komt dan in de map data/store/ van je repository. Een backtest is geen garantie voor de toekomst; "
                    "de website geeft geen financieel advies.")

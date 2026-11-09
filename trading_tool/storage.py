@@ -57,6 +57,7 @@ class DataStore:
         self.github = github
         self.local_dir.mkdir(parents=True, exist_ok=True)
         self._tomb_path = self.local_dir / "deleted.json"
+        self._sync_path = self.local_dir / "synced.json"
 
     # ------------------------------------------------------------------ #
     # interne helpers
@@ -73,6 +74,72 @@ class DataStore:
 
     def _set_tombstones(self, t: dict[str, float]) -> None:
         self._tomb_path.write_text(json.dumps(t))
+
+    def _synced_map(self) -> dict[str, int]:
+        try:
+            return json.loads(self._sync_path.read_text())
+        except (FileNotFoundError, ValueError):
+            return {}
+
+    def _mark_synced(self, rels: list[str]) -> None:
+        m = self._synced_map()
+        for rel in rels:
+            p = self.local_dir / rel
+            if p.exists():
+                m[rel] = p.stat().st_mtime_ns
+        self._sync_path.write_text(json.dumps(m))
+
+    def _is_on_github(self, rel: str) -> bool:
+        """rel = pad binnen de store, bv. 'BTCUSD/M1/2024.parquet'."""
+        local = self.local_dir / rel
+        if not local.exists():
+            return (self.repo_dir / rel).exists()
+        repo = self.repo_dir / rel
+        if repo.exists() and repo.stat().st_mtime >= local.stat().st_mtime:
+            return True
+        return self._synced_map().get(rel) == local.stat().st_mtime_ns
+
+    def unsynced_files(self) -> list[str]:
+        """Lokale bestanden (data + resultaten) die nog niet op GitHub staan."""
+        out = []
+        for p in sorted(self.local_dir.rglob("*")):
+            if not p.is_file() or p.parent == self.local_dir:   # bookkeeping-bestanden overslaan
+                continue
+            rel = p.relative_to(self.local_dir).as_posix()
+            if not self._is_on_github(rel):
+                out.append(rel)
+        return out
+
+    def push_unsynced(self, max_batch_mb: float = 40.0) -> SaveReport:
+        """Stuur alle nog niet gesynchroniseerde bestanden naar GitHub (in een paar commits)."""
+        rep = SaveReport()
+        if not self.github:
+            rep.error = "GitHub is niet gekoppeld."
+            return rep
+        files = self.unsynced_files()
+        batch: dict[str, bytes] = {}
+        size = 0.0
+
+        def flush():
+            nonlocal batch, size
+            if batch:
+                self.github.commit_files({f"{STORE_REL}/{k}": v for k, v in batch.items()},
+                                         f"Data: {len(batch)} bestand(en) naar GitHub gezet")
+                self._mark_synced(list(batch))
+                rep.total += len(batch)
+            batch, size = {}, 0.0
+        try:
+            for rel in files:
+                data = (self.local_dir / rel).read_bytes()
+                if size + len(data) / 1e6 > max_batch_mb:
+                    flush()
+                batch[rel] = data
+                size += len(data) / 1e6
+            flush()
+            rep.synced = True
+        except Exception as e:  # noqa: BLE001
+            rep.error = str(e)
+        return rep
 
     def _resolve(self, rel_dir: str) -> dict[str, Path]:
         """{bestandsnaam: pad} met de nieuwste versie per bestand (lokaal of repo)."""
@@ -148,12 +215,12 @@ class DataStore:
             if not files:
                 continue
             df = self.load(sym, tf)
-            in_repo = all((self.repo_dir / sym / TF_CODE[tf] / n).exists() for n in files)
+            on_gh = all(self._is_on_github(f"{sym}/{TF_CODE[tf]}/{n}") for n in files)
             rows.append({
                 "Asset": sym, "Timeframe": tf, "Bars": len(df),
                 "Van": df.index[0].strftime("%Y-%m-%d"), "Tot": df.index[-1].strftime("%Y-%m-%d"),
                 "Grootte (MB)": round(sum(p.stat().st_size for p in files.values()) / 1e6, 2),
-                "Opslag": "GitHub ✓" if in_repo else ("GitHub (sync)" if self.synced else "Lokaal"),
+                "Opslag": "GitHub ✓" if on_gh else ("Nog niet op GitHub" if self.synced else "Tijdelijk (server)"),
             })
         cols = ["Asset", "Timeframe", "Bars", "Van", "Tot", "Grootte (MB)", "Opslag"]
         return pd.DataFrame(rows, columns=cols)
@@ -192,6 +259,7 @@ class DataStore:
         if self.github:
             try:
                 self.github.commit_files(payload, message or f"Data: {symbol} {tf} bijgewerkt ({', '.join(map(str, years))})")
+                self._mark_synced([f"{symbol}/{code}/{y}.parquet" for y in years])
                 rep.synced = True
             except Exception as e:  # noqa: BLE001 - lokale opslag is gelukt, sync-fout melden
                 rep.error = str(e)
@@ -237,6 +305,7 @@ class DataStore:
             try:
                 self.github.commit_files({f"{STORE_REL}/{RESULTS_DIR}/{k}": v for k, v in files.items()},
                                          "Backtest-resultaten bijgewerkt")
+                self._mark_synced([f"{RESULTS_DIR}/{k}" for k in files])
                 rep.synced = True
             except Exception as e:  # noqa: BLE001
                 rep.error = str(e)

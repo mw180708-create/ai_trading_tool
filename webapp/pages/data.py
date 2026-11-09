@@ -44,48 +44,119 @@ def parse_upload(data: bytes, name: str) -> pd.DataFrame:
     return read_ohlc_csv(buf)
 
 
+SECRETS_TEMPLATE = 'GITHUB_TOKEN = "{token}"\nGITHUB_REPO = "{repo}"'
+
+
+def _save_step(status: dict) -> None:
+    tok = st.session_state.get("gh_ok_token")
+    st.markdown("##### Stap 3 · Vast opslaan (zodat je het niet opnieuw hoeft te plakken)")
+    st.markdown("Het token werkt nu **tot de website herstart**. Zet het in de *Secrets* van Streamlit om het "
+                "blijvend te bewaren:")
+    st.markdown("""
+1. Ga naar **https://share.streamlit.io** en log in.
+2. Klik bij je app rechts op de **drie puntjes ⋮** → **Settings**.
+3. Kies links **Secrets**.
+4. Klik in het grote tekstvak, **wis wat erin staat** en plak precies onderstaande tekst (kopieer-knop rechtsboven):
+""")
+    st.code(SECRETS_TEMPLATE.format(token=tok or "PLAK-HIER-JE-TOKEN", repo=status.get("repo")), language="toml")
+    st.markdown("5. Klik **Save changes**. Na ±1 minuut staat hier *Token uit: Secrets (blijvend)*.")
+    st.caption('Let op: de aanhalingstekens " " zijn nodig. Plak dus niet alleen de code zelf.')
+
+
+def _connect_wizard(status: dict) -> None:
+    """Stap-voor-stap: token maken → testen op de website → (optioneel) vast opslaan in Secrets."""
+    st.markdown("##### Stap 1 · Maak een token op GitHub")
+    t_easy, t_fine = st.tabs(["Makkelijkste manier (classic token)", "Veiligere manier (fine-grained token)"])
+    with t_easy:
+        st.markdown("""
+1. Open **https://github.com/settings/tokens/new** (log in als *mw180708-create*).
+2. **Note**: typ `ai-trading-tool` · **Expiration**: kies *No expiration* of *1 year*.
+3. Zet een vinkje bij **repo** (het bovenste vakje, de rest gaat vanzelf mee).
+4. Scroll naar beneden → **Generate token** → klik op het kopieer-icoontje naast de code (begint met `ghp_`).
+
+⚠️ GitHub laat de code maar één keer zien. Kwijt? Maak gewoon een nieuwe.
+""")
+    with t_fine:
+        st.markdown("""
+1. Open **https://github.com/settings/personal-access-tokens/new**.
+2. **Token name** `ai-trading-tool` · **Expiration** naar keuze.
+3. **Repository access** → *Only select repositories* → kies **ai_trading_tool**.
+4. **Permissions** → klik **Add permissions** (of *Repository permissions*) → **Contents** → zet op **Read and write**.
+5. **Generate token** → kopieer de code (begint met `github_pat_`).
+""")
+
+    st.markdown("##### Stap 2 · Plak het token hier en test het")
+    c1, c2 = st.columns([3, 1])
+    tok = c1.text_input("Token", type="password", placeholder="ghp_... of github_pat_...",
+                        label_visibility="collapsed", key="gh_token_input")
+    test = c2.button("Testen & koppelen", type="primary", width="stretch", disabled=not tok)
+    if test and tok:
+        with st.spinner("Token controleren bij GitHub..."):
+            ok, msg = S.test_token(tok, status.get("repo"))
+        if ok:
+            S.use_token_now(tok, status.get("repo"))
+            st.session_state["gh_ok_token"] = S.clean_token(tok)
+            S.flash("✅ Gelukt! " + msg + " Opslaan op GitHub staat nu aan.", "success")
+            st.rerun()
+        else:
+            st.error("❌ " + msg)
+
+    if st.session_state.get("gh_ok_token"):
+        _save_step(status)
+
+
 def _storage_panel() -> None:
     store = S.store()
     status = S.github_status()
     with st.container(key="panel_storage"):
-        c1, c2 = st.columns([3, 1])
-        if status["configured"] and not status["ok"]:
-            st.error(f"GitHub-koppeling werkt niet: {status['msg']}. Controleer het token (Contents: Read and write) "
-                     "en GITHUB_REPO in de Secrets. Data wordt tot die tijd alleen tijdelijk bewaard.")
-            if st.button("Opnieuw proberen"):
-                S.reset_github()
-                st.rerun()
         if store.synced:
-            repo = S.secret("GITHUB_REPO", S.DEFAULT_REPO)
-            c1.markdown(f"{badge('Opslag gekoppeld aan GitHub', 'ok')} &nbsp; Alles wat je opslaat wordt bewaard in "
-                        f"**{repo}** (map `data/store/`) en blijft staan na een herstart.", unsafe_allow_html=True)
+            src = {"secrets": "Secrets (blijvend)", "website": "op de website geplakt (tot herstart)",
+                   "omgeving": "omgevingsvariabele"}.get(status.get("source"), "")
+            c1, c2 = st.columns([3, 1])
+            c1.markdown(f"{badge('Opslag gekoppeld aan GitHub ✓', 'ok')} &nbsp; Alles wat je opslaat komt in "
+                        f"**{status['repo']}** (map `data/store/`) en blijft bewaard.  \n"
+                        f"<span class='small-note'>Token uit: {src}</span>", unsafe_allow_html=True)
             if c2.button("Verbinding testen", width="stretch"):
                 ok, msg = store.github.check()
                 (st.success if ok else st.error)(msg)
-        else:
-            c1.markdown(f"{badge('Opslag: alleen tijdelijk', 'warn')} &nbsp; Data wordt nu op de server bewaard, "
-                        "maar verdwijnt als de online website herstart. Koppel GitHub om alles blijvend te bewaren.",
-                        unsafe_allow_html=True)
-            with st.expander("🔗  GitHub koppelen (eenmalig, ±3 minuten)"):
-                st.markdown(f"""
-1. Open **https://github.com/settings/personal-access-tokens/new** (ingelogd als *mw180708-create*).
-2. Vul in: **Token name** `ai-trading-tool`, **Expiration** bv. *1 year*.
-3. **Repository access** → *Only select repositories* → kies **ai_trading_tool**.
-4. **Permissions** → *Repository permissions* → **Contents** → *Read and write*.
-5. Klik **Generate token** en kopieer de code (begint met `github_pat_`).
-6. Ga naar **share.streamlit.io** → bij je app op **⋮** → **Settings** → **Secrets** en plak:
-""")
-                st.code(f'GITHUB_TOKEN = "github_pat_...jouw-code..."\nGITHUB_REPO = "{S.DEFAULT_REPO}"', language="toml")
-                st.markdown("7. Klik **Save**. De website herstart en toont daarna *Opslag gekoppeld aan GitHub*.")
-                st.caption("Lokaal op je pc? Zet dezelfde regels in het bestand `.streamlit/secrets.toml`. "
-                           "Lokaal blijft je data ook zonder GitHub bewaard (map `.datastore`).")
+            pending = store.unsynced_files()
+            if pending:
+                w1, w2 = st.columns([3, 1])
+                w1.warning(f"{len(pending)} bestand(en) staan alleen nog op de server (opgeslagen vóór de koppeling). "
+                           "Stuur ze naar GitHub zodat ze bewaard blijven.")
+                if w2.button("⬆️  Nu naar GitHub sturen", type="primary", width="stretch"):
+                    with st.spinner("Bezig met uploaden naar GitHub..."):
+                        rep = store.push_unsynced()
+                    S.flash(f"{rep.total} bestand(en) op GitHub gezet ✓" if not rep.error
+                            else f"Uploaden naar GitHub mislukt: {rep.error}", "success" if not rep.error else "error")
+                    st.rerun()
+            if status.get("source") == "website":
+                with st.expander("📌  Token blijvend opslaan in Streamlit Secrets", expanded=True):
+                    _save_step(status)
+            return
+
+        st.markdown(f"{badge('Opslag: alleen tijdelijk', 'warn')} &nbsp; Je data staat nu op de server, maar "
+                    "verdwijnt als de online website herstart. Koppel GitHub om alles blijvend te bewaren.",
+                    unsafe_allow_html=True)
+        if status.get("secrets_error"):
+            st.error("De **Secrets** in Streamlit bevatten een schrijffout, daardoor wordt het token niet gelezen. "
+                     "Wis het tekstvak in Settings → Secrets en plak de tekst uit stap 3 opnieuw.  \n"
+                     f"Technische melding: `{status['secrets_error'][:300]}`")
+        elif status.get("configured") and not status.get("ok"):
+            st.error(f"Er is een token gevonden in de Secrets, maar het werkt niet: {status['msg']}")
+            if st.button("Opnieuw controleren"):
+                S.reset_github()
+                st.rerun()
+        with st.expander("🔗  GitHub koppelen (±3 minuten)", expanded=bool(status.get("configured")
+                                                                            or status.get("secrets_error"))):
+            _connect_wizard(status)
 
 
 def _library() -> None:
     store = S.store()
     df = store.datasets()
     if df.empty:
-        st.info("De bibliotheek is nog leeg. Upload bestanden of download BTC-data via de tabbladen hierboven.")
+        st.info("De bibliotheek is nog leeg. Kies hierboven **Uploaden** of **Downloaden** om data toe te voegen.")
         return
     st.dataframe(df, hide_index=True, width="stretch", column_config={
         "Bars": st.column_config.NumberColumn(format="%d"),
@@ -214,18 +285,21 @@ def render() -> None:
     st.markdown("## 📁 Data")
     S.show_flash()
     _storage_panel()
-    t1, t2, t3, t4 = st.tabs(["📚  Bibliotheek", "📤  Uploaden", "🌐  Downloaden", "🧪  Demo"])
-    with t1, st.container(key="panel_lib"):
-        ptitle("Opgeslagen datasets")
-        _library()
-    with t2, st.container(key="panel_up"):
-        ptitle("Bestanden uploaden")
-        _upload()
-    with t3, st.container(key="panel_dl"):
-        ptitle("Data downloaden")
-        _download()
-    with t4, st.container(key="panel_demo"):
-        ptitle("Demo-modus")
-        _demo()
+    sections = ["📚  Bibliotheek", "📤  Uploaden", "🌐  Downloaden", "🧪  Demo"]
+    section = st.segmented_control("Onderdeel", sections, default=sections[0], key="data_section",
+                                   label_visibility="collapsed") or sections[0]
+    with st.container(key="panel_section"):
+        if section == sections[0]:
+            ptitle("Opgeslagen datasets")
+            _library()
+        elif section == sections[1]:
+            ptitle("Bestanden uploaden")
+            _upload()
+        elif section == sections[2]:
+            ptitle("Data downloaden")
+            _download()
+        else:
+            ptitle("Demo-modus")
+            _demo()
     html_block('<p class="small-note">Tip: voor de beste backtest heb je per asset <b>1-minuut data</b> (backtest-periode) '
                'én <b>1D-data met jaren historie</b> nodig (voor de Monthly/Weekly analyse).</p>')

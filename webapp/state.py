@@ -24,28 +24,86 @@ SYMBOLS = ["BTCUSD", "XAUUSD"]
 # --------------------------------------------------------------------------- #
 # Config / opslag
 # --------------------------------------------------------------------------- #
-def secret(key: str, default: str | None = None) -> str | None:
+def _read_secrets() -> tuple[dict, str | None]:
+    """Alle Streamlit-secrets als dict + eventuele fout (bv. ongeldige TOML)."""
     try:
-        if key in st.secrets:
-            return str(st.secrets[key])
-    except Exception:  # noqa: BLE001 - geen secrets.toml aanwezig
-        pass
+        return {k: st.secrets[k] for k in st.secrets.keys()}, None
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        if "pars" in msg.lower() or "expected" in msg.lower() or "invalid" in msg.lower():
+            return {}, msg.split(":", 1)[-1].strip() if "secrets.toml" in msg else msg
+        return {}, None   # geen secrets ingesteld
+
+
+def secret(key: str, default: str | None = None) -> str | None:
+    sec, _ = _read_secrets()
+    if key in sec:
+        return str(sec[key])
     return os.environ.get(key, default)
 
 
-@st.cache_resource(show_spinner=False, ttl=900)
-def _store(token: str | None, repo: str, branch: str) -> tuple[DataStore, dict]:
+def clean_token(tok) -> str | None:
+    if tok is None:
+        return None
+    t = str(tok).strip().strip('"').strip("'").strip()
+    if t.lower().startswith("bearer "):
+        t = t[7:].strip()
+    t = t.replace(" ", "").replace("\n", "")
+    return t or None
+
+
+def clean_repo(repo: str | None) -> str:
+    r = (repo or DEFAULT_REPO).strip().strip('"').strip("'")
+    for pre in ("https://github.com/", "http://github.com/", "github.com/"):
+        if r.lower().startswith(pre):
+            r = r[len(pre):]
+    r = r.removesuffix(".git").strip("/")
+    return r or DEFAULT_REPO
+
+
+def _token_from_secrets(sec: dict) -> str | None:
+    """Accepteer verschillende schrijfwijzen: GITHUB_TOKEN, github_token, token, [github] token = ..."""
+    for k in ("GITHUB_TOKEN", "github_token", "Github_Token", "GH_TOKEN", "TOKEN", "token"):
+        if k in sec and isinstance(sec[k], str):
+            return clean_token(sec[k])
+    for sect in ("github", "GITHUB", "GitHub"):
+        if sect in sec and hasattr(sec[sect], "get"):
+            v = sec[sect].get("token") or sec[sect].get("GITHUB_TOKEN")
+            if v:
+                return clean_token(v)
+    return None
+
+
+@st.cache_resource(show_spinner=False)
+def runtime_cfg() -> dict:
+    """Token dat op de website is geplakt (geldig tot de website herstart)."""
+    return {}
+
+
+def _cfg() -> tuple[str | None, str, str, str]:
+    sec, _ = _read_secrets()
+    tok = _token_from_secrets(sec)
+    source = "secrets"
+    if not tok and runtime_cfg().get("token"):
+        tok, source = runtime_cfg()["token"], "website"
+    if not tok and os.environ.get("AI_TRADING_GITHUB_TOKEN"):
+        tok, source = clean_token(os.environ["AI_TRADING_GITHUB_TOKEN"]), "omgeving"
+    repo = sec.get("GITHUB_REPO") or sec.get("github_repo") or runtime_cfg().get("repo") or DEFAULT_REPO
+    if "github" in sec and hasattr(sec["github"], "get") and sec["github"].get("repo"):
+        repo = sec["github"]["repo"]
+    return tok, clean_repo(str(repo)), str(sec.get("GITHUB_BRANCH", "main")), source
+
+
+@st.cache_resource(show_spinner=False, ttl=1800)
+def _store(token: str | None, repo: str, branch: str, source: str) -> tuple[DataStore, dict]:
     """DataStore + status van de GitHub-koppeling (token wordt eerst gecontroleerd)."""
     gh = make_github_sync(token, repo, branch)
-    status = {"configured": gh is not None, "ok": False, "msg": "Geen GITHUB_TOKEN ingesteld."}
+    status = {"configured": gh is not None, "ok": False, "msg": "Geen token ingesteld.", "source": source,
+              "repo": repo}
     if gh is not None:
         ok, msg = gh.check()
         status.update(ok=ok, msg=msg)
     return DataStore(ROOT, github=gh if status["ok"] else None), status
-
-
-def _cfg() -> tuple[str | None, str, str]:
-    return secret("GITHUB_TOKEN"), secret("GITHUB_REPO", DEFAULT_REPO), secret("GITHUB_BRANCH", "main")
 
 
 def store() -> DataStore:
@@ -53,7 +111,22 @@ def store() -> DataStore:
 
 
 def github_status() -> dict:
-    return _store(*_cfg())[1]
+    st_ = dict(_store(*_cfg())[1])
+    st_["secrets_error"] = _read_secrets()[1]
+    return st_
+
+
+def test_token(token: str, repo: str | None = None) -> tuple[bool, str]:
+    gh = make_github_sync(clean_token(token), clean_repo(repo), "main")
+    if gh is None:
+        return False, "Plak eerst een token."
+    return gh.check()
+
+
+def use_token_now(token: str, repo: str | None = None) -> None:
+    runtime_cfg()["token"] = clean_token(token)
+    runtime_cfg()["repo"] = clean_repo(repo)
+    _store.clear()
 
 
 def reset_github() -> None:

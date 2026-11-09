@@ -127,3 +127,50 @@ def test_live_state():
     s = analyze_live(demo_dataset("BTCUSD"))
     assert 0 <= s.score <= 100 and len(s.rows) == 5
     assert s.status in {"none", "wait_poi", "wait_confirm", "signal"} and s.decision
+
+
+class StatusSession:
+    """Geeft vaste statuscodes terug voor de check()-stappen."""
+
+    def __init__(self, repo_status, blob_status=201):
+        self.repo_status, self.blob_status, self.headers = repo_status, blob_status, {}
+
+    def request(self, method, url, timeout=None, json=None, params=None):
+        if method == "GET":
+            return FakeResp({"full_name": "owner/repo"}, self.repo_status)
+        return FakeResp({"sha": "x"}, self.blob_status)
+
+
+def test_check_messages():
+    mk = lambda r, b=201: GitHubSync(token="t", repo="owner/repo", session=StatusSession(r, b)).check()  # noqa: E731
+    ok, msg = mk(200)
+    assert ok and "schrijven werkt" in msg
+    ok, msg = mk(401)
+    assert not ok and "ongeldig" in msg
+    ok, msg = mk(404)
+    assert not ok and "geen toegang" in msg
+    ok, msg = mk(200, 403)
+    assert not ok and "Read and write" in msg
+
+
+def test_secret_cleaning():
+    from webapp.state import _token_from_secrets, clean_repo, clean_token
+    assert clean_token('  "ghp_abc123" \n') == "ghp_abc123"
+    assert clean_token("Bearer ghp_x") == "ghp_x"
+    assert clean_repo("https://github.com/mw180708-create/ai_trading_tool.git") == "mw180708-create/ai_trading_tool"
+    assert _token_from_secrets({"github_token": "ghp_1"}) == "ghp_1"
+    assert _token_from_secrets({"github": {"token": "ghp_2"}}) == "ghp_2"
+    assert _token_from_secrets({}) is None
+
+
+def test_push_unsynced_after_connecting(tmp_path):
+    store = DataStore(tmp_path)                      # eerst zonder GitHub
+    store.save("XAUUSD", "1D", _sample("2023-06-01", "2024-02-01", "1D"))
+    assert len(store.unsynced_files()) == 2
+    assert set(store.datasets()["Opslag"]) == {"Tijdelijk (server)"}
+    fake = FakeGitHub()
+    store.github = GitHubSync(token="t", repo="owner/repo", session=fake)   # daarna koppelen
+    assert set(store.datasets()["Opslag"]) == {"Nog niet op GitHub"}
+    rep = store.push_unsynced()
+    assert rep.synced and rep.total == 2 and len(fake.files) == 2
+    assert store.unsynced_files() == [] and set(store.datasets()["Opslag"]) == {"GitHub ✓"}
