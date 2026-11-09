@@ -1,0 +1,264 @@
+"""Databibliotheek: geüploade/gedownloade koersdata en backtest-resultaten blijvend bewaren.
+
+Opslag-indeling (per jaar, zodat bestanden klein blijven en alleen gewijzigde jaren
+opnieuw worden opgeslagen):
+
+    data/store/BTCUSD/M1/2024.parquet
+    data/store/XAUUSD/D1/2019.parquet
+    data/store/_results/{trades.parquet, equity.parquet, meta.json}
+
+* Lokaal wordt altijd geschreven naar `.datastore/` (staat in .gitignore).
+* Met een GitHub-token wordt dezelfde inhoud ook in de repository (`data/store/`) gecommit,
+  zodat de data een herstart van de website (Streamlit Cloud) overleeft.
+* Bij het lezen wordt per bestand de nieuwste versie (lokaal of repository) gebruikt.
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import pandas as pd
+
+from .config import TF_MINUTES, TIMEFRAMES
+from .github_sync import GitHubError, GitHubSync
+
+TF_CODE = {"1M": "MN1", "1W": "W1", "1D": "D1", "4H": "H4", "1H": "H1", "15m": "M15", "5m": "M5", "1m": "M1"}
+CODE_TF = {v: k for k, v in TF_CODE.items()}
+STORE_REL = "data/store"
+RESULTS_DIR = "_results"
+OHLCV = ["open", "high", "low", "close", "volume"]
+
+
+def _df_to_parquet_bytes(df: pd.DataFrame) -> bytes:
+    buf = io.BytesIO()
+    df.to_parquet(buf, compression="zstd")
+    return buf.getvalue()
+
+
+@dataclass
+class SaveReport:
+    added: int = 0
+    total: int = 0
+    years: list[int] = field(default_factory=list)
+    synced: bool = False
+    error: str | None = None
+
+
+class DataStore:
+    def __init__(self, repo_root: str | Path, local_root: str | Path | None = None,
+                 github: GitHubSync | None = None):
+        self.repo_root = Path(repo_root)
+        self.repo_dir = self.repo_root / STORE_REL
+        self.local_dir = Path(local_root) if local_root else self.repo_root / ".datastore"
+        self.github = github
+        self.local_dir.mkdir(parents=True, exist_ok=True)
+        self._tomb_path = self.local_dir / "deleted.json"
+
+    # ------------------------------------------------------------------ #
+    # interne helpers
+    # ------------------------------------------------------------------ #
+    @property
+    def synced(self) -> bool:
+        return self.github is not None
+
+    def _tombstones(self) -> dict[str, float]:
+        try:
+            return json.loads(self._tomb_path.read_text())
+        except (FileNotFoundError, ValueError):
+            return {}
+
+    def _set_tombstones(self, t: dict[str, float]) -> None:
+        self._tomb_path.write_text(json.dumps(t))
+
+    def _resolve(self, rel_dir: str) -> dict[str, Path]:
+        """{bestandsnaam: pad} met de nieuwste versie per bestand (lokaal of repo)."""
+        tomb = self._tombstones()
+        out: dict[str, Path] = {}
+        for base in (self.repo_dir, self.local_dir):
+            d = base / rel_dir
+            if not d.is_dir():
+                continue
+            for p in d.iterdir():
+                if not p.is_file() or p.name.startswith("."):
+                    continue
+                rel = f"{rel_dir}/{p.name}"
+                if rel in tomb and p.stat().st_mtime <= tomb[rel]:
+                    continue
+                if p.name not in out or p.stat().st_mtime > out[p.name].stat().st_mtime:
+                    out[p.name] = p
+        return out
+
+    def _symbols_tfs(self) -> list[tuple[str, str]]:
+        found = set()
+        for base in (self.repo_dir, self.local_dir):
+            if not base.is_dir():
+                continue
+            for sd in base.iterdir():
+                if not sd.is_dir() or sd.name.startswith(("_", ".")):
+                    continue
+                for td in sd.iterdir():
+                    if td.is_dir() and td.name in CODE_TF:
+                        found.add((sd.name, CODE_TF[td.name]))
+        return sorted(found, key=lambda x: (x[0], -TF_MINUTES[x[1]]))
+
+    # ------------------------------------------------------------------ #
+    # publieke API - koersdata
+    # ------------------------------------------------------------------ #
+    def fingerprint(self) -> str:
+        h = hashlib.sha1()
+        for sym, tf in self._symbols_tfs():
+            for name, p in sorted(self._resolve(f"{sym}/{TF_CODE[tf]}").items()):
+                st = p.stat()
+                h.update(f"{sym}/{tf}/{name}:{st.st_mtime_ns}:{st.st_size};".encode())
+        return h.hexdigest()
+
+    def symbols(self) -> list[str]:
+        return sorted({s for s, _ in self._symbols_tfs()})
+
+    def timeframes(self, symbol: str) -> list[str]:
+        return [tf for s, tf in self._symbols_tfs() if s == symbol and self._resolve(f"{s}/{TF_CODE[tf]}")]
+
+    def load(self, symbol: str, tf: str) -> pd.DataFrame | None:
+        files = self._resolve(f"{symbol}/{TF_CODE[tf]}")
+        if not files:
+            return None
+        parts = [pd.read_parquet(p) for _, p in sorted(files.items())]
+        df = pd.concat(parts).sort_index()
+        df = df[~df.index.duplicated(keep="last")]
+        if df.index.tz is None:
+            df.index = df.index.tz_localize("UTC")
+        return df[OHLCV]
+
+    def load_symbol(self, symbol: str) -> dict[str, pd.DataFrame]:
+        out = {}
+        for tf in self.timeframes(symbol):
+            df = self.load(symbol, tf)
+            if df is not None and len(df):
+                out[tf] = df
+        return out
+
+    def datasets(self) -> pd.DataFrame:
+        rows = []
+        for sym, tf in self._symbols_tfs():
+            files = self._resolve(f"{sym}/{TF_CODE[tf]}")
+            if not files:
+                continue
+            df = self.load(sym, tf)
+            in_repo = all((self.repo_dir / sym / TF_CODE[tf] / n).exists() for n in files)
+            rows.append({
+                "Asset": sym, "Timeframe": tf, "Bars": len(df),
+                "Van": df.index[0].strftime("%Y-%m-%d"), "Tot": df.index[-1].strftime("%Y-%m-%d"),
+                "Grootte (MB)": round(sum(p.stat().st_size for p in files.values()) / 1e6, 2),
+                "Opslag": "GitHub ✓" if in_repo else ("GitHub (sync)" if self.synced else "Lokaal"),
+            })
+        cols = ["Asset", "Timeframe", "Bars", "Van", "Tot", "Grootte (MB)", "Opslag"]
+        return pd.DataFrame(rows, columns=cols)
+
+    def save(self, symbol: str, tf: str, df: pd.DataFrame, message: str | None = None) -> SaveReport:
+        """Voeg data toe aan de bibliotheek (samenvoegen met bestaande data, nieuwste wint)."""
+        symbol = symbol.upper()
+        new = df[OHLCV].copy()
+        if new.index.tz is None:
+            new.index = new.index.tz_localize("UTC")
+        new = new[~new.index.duplicated(keep="last")].sort_index()
+        old = self.load(symbol, tf)
+        before = 0 if old is None else len(old)
+        merged = new if old is None else pd.concat([old, new])
+        merged = merged[~merged.index.duplicated(keep="last")].sort_index()
+
+        years = sorted(set(new.index.year))
+        code = TF_CODE[tf]
+        local_d = self.local_dir / symbol / code
+        local_d.mkdir(parents=True, exist_ok=True)
+        payload: dict[str, bytes] = {}
+        for y in years:
+            part = merged[merged.index.year == y]
+            data = _df_to_parquet_bytes(part)
+            (local_d / f"{y}.parquet").write_bytes(data)
+            payload[f"{STORE_REL}/{symbol}/{code}/{y}.parquet"] = data
+
+        tomb = self._tombstones()
+        changed = False
+        for y in years:
+            changed |= tomb.pop(f"{symbol}/{code}/{y}.parquet", None) is not None
+        if changed:
+            self._set_tombstones(tomb)
+
+        rep = SaveReport(added=len(merged) - before, total=len(merged), years=years)
+        if self.github:
+            try:
+                self.github.commit_files(payload, message or f"Data: {symbol} {tf} bijgewerkt ({', '.join(map(str, years))})")
+                rep.synced = True
+            except Exception as e:  # noqa: BLE001 - lokale opslag is gelukt, sync-fout melden
+                rep.error = str(e)
+        return rep
+
+    def delete(self, symbol: str, tf: str) -> SaveReport:
+        code = TF_CODE[tf]
+        files = self._resolve(f"{symbol}/{code}")
+        tomb = self._tombstones()
+        now = time.time()
+        for name in files:
+            lp = self.local_dir / symbol / code / name
+            if lp.exists():
+                lp.unlink()
+            if (self.repo_dir / symbol / code / name).exists():
+                tomb[f"{symbol}/{code}/{name}"] = now
+        self._set_tombstones(tomb)
+        rep = SaveReport()
+        if self.github and files:
+            try:
+                self.github.commit_files({f"{STORE_REL}/{symbol}/{code}/{n}": None for n in files},
+                                         f"Data: {symbol} {tf} verwijderd")
+                rep.synced = True
+            except Exception as e:  # noqa: BLE001
+                rep.error = str(e)
+        return rep
+
+    # ------------------------------------------------------------------ #
+    # backtest-resultaten
+    # ------------------------------------------------------------------ #
+    def save_results(self, trades: pd.DataFrame, equity: pd.DataFrame, meta: dict) -> SaveReport:
+        d = self.local_dir / RESULTS_DIR
+        d.mkdir(parents=True, exist_ok=True)
+        files = {
+            "trades.parquet": _df_to_parquet_bytes(trades.reset_index(drop=True)),
+            "equity.parquet": _df_to_parquet_bytes(equity.reset_index(drop=True)),
+            "meta.json": json.dumps(meta, default=str, indent=1).encode(),
+        }
+        for name, data in files.items():
+            (d / name).write_bytes(data)
+        rep = SaveReport(total=len(trades))
+        if self.github:
+            try:
+                self.github.commit_files({f"{STORE_REL}/{RESULTS_DIR}/{k}": v for k, v in files.items()},
+                                         "Backtest-resultaten bijgewerkt")
+                rep.synced = True
+            except Exception as e:  # noqa: BLE001
+                rep.error = str(e)
+        return rep
+
+    def load_results(self) -> tuple[pd.DataFrame, pd.DataFrame, dict] | None:
+        files = self._resolve(RESULTS_DIR)
+        if not {"trades.parquet", "equity.parquet", "meta.json"} <= set(files):
+            return None
+        try:
+            trades = pd.read_parquet(files["trades.parquet"])
+            equity = pd.read_parquet(files["equity.parquet"])
+            meta = json.loads(files["meta.json"].read_text())
+        except Exception:  # noqa: BLE001 - kapotte/oude resultaten negeren
+            return None
+        return trades, equity, meta
+
+
+def make_github_sync(token: str | None, repo: str | None, branch: str = "main") -> GitHubSync | None:
+    if not token or not repo:
+        return None
+    return GitHubSync(token=token.strip(), repo=repo.strip(), branch=branch)
+
+
+__all__ = ["DataStore", "SaveReport", "TF_CODE", "CODE_TF", "make_github_sync", "GitHubError", "TIMEFRAMES"]

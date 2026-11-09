@@ -4,6 +4,8 @@ numpy>=1.24
 matplotlib>=3.7
 streamlit>=1.45
 plotly>=5.20
+pyarrow>=14
+requests>=2.31
 
 # Optioneel - data downloaden (lokaal): pip install ccxt yfinance
 # ccxt>=4.0          # BTC 1m/1h/1d historie via Binance/Bybit/Kraken

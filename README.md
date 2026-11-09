@@ -5,17 +5,32 @@ Python backtester die de regels uit het Trading Plan 2026-2028 strikt en emotiel
 
 ## 🌐 De website (aanbevolen)
 
-Alles via de browser: data uploaden, backtest starten, resultaten, grafieken en trades bekijken.
+Alles via de browser, in een donker trading-dashboard:
 
-**Online zetten (gratis, eenmalig ±5 minuten) – via Streamlit Community Cloud:**
-1. Ga naar https://share.streamlit.io en log in met **Continue with GitHub**.
-2. Klik **Create app** → **Deploy a public app from GitHub** (werkt ook met een private repo).
-3. Vul in: Repository `mw180708-create/ai_trading_tool`, Branch `main`, Main file path `app.py`.
-4. Klik **Deploy**. Na een paar minuten krijg je een eigen link (bv. `https://jouwnaam-ai-trading-tool.streamlit.app`).
+| Pagina | Wat je er doet |
+|---|---|
+| 🏠 **Dashboard** | Koersgrafiek (1m t/m 1W) met je trades, **Bias Engine** (liquiditeit / balance / bias per timeframe), beslissing volgens de regels, bias-score, markt-overzicht en performance |
+| 📁 **Data** | Bibliotheek met al je data · CSV's uploaden (MT4/MT5/TradingView) · BTC direct downloaden (Binance/Bitstamp) · demo-modus |
+| ▶️ **Backtest** | Assets en instellingen kiezen, backtest starten |
+| 📊 **Resultaten** | KPI's, equity curve, resultaat per trade en per maand, exits, uitsplitsingen, BTC vs goud |
+| 📋 **Trades** | Alle trades filteren en downloaden; klik een trade om hem op de grafiek te zien (POI, entry, SL, TP) |
 
-Elke wijziging die op GitHub komt (code of CSV's in `data/`) wordt automatisch op de website gezet.
+**Online zetten (gratis, via Streamlit Community Cloud):**
+1. https://share.streamlit.io → **Continue with GitHub** → **Create app**.
+2. Repository `mw180708-create/ai_trading_tool`, branch `main`, main file `streamlit_app.py` → **Deploy**.
 
-**Lokaal op je eigen pc:** dubbelklik `START_WEBSITE.bat` (Windows) of `streamlit run app.py`.
+**Data blijvend bewaren (aanbevolen):** de online website wist zijn eigen schijf bij een herstart. Koppel daarom GitHub:
+1. Maak een token op https://github.com/settings/personal-access-tokens/new → alleen repository *ai_trading_tool* →
+   *Repository permissions* → **Contents: Read and write**.
+2. share.streamlit.io → je app → **⋮ → Settings → Secrets**:
+   ```toml
+   GITHUB_TOKEN = "github_pat_..."
+   GITHUB_REPO = "mw180708-create/ai_trading_tool"
+   ```
+Uploads, downloads en backtest-resultaten worden dan opgeslagen in `data/store/` van de repository (per jaar, Parquet).
+
+**Lokaal op je eigen pc:** dubbelklik `START_WEBSITE.bat` (Windows) of `streamlit run app.py`. Lokaal blijft data
+ook zonder GitHub bewaard in de map `.datastore/`.
 
 ## Installatie
 
@@ -120,7 +135,14 @@ trading_tool/bias.py        timeframe-confluence
 trading_tool/backtester.py  event-driven engine en trade management
 trading_tool/metrics.py     rapportage
 trading_tool/synthetic.py   synthetische testdata
-tests/                      tests (lookahead, risico, CSV-formaten)
+trading_tool/live.py        Bias Engine: actuele stand van de regels
+trading_tool/storage.py     databibliotheek (lokaal + GitHub)
+trading_tool/github_sync.py commits via de GitHub API
+trading_tool/downloaders.py BTC-data downloaden (Binance / Bitstamp)
+app.py / streamlit_app.py   website (Streamlit)
+webapp/                     pagina's, thema en grafieken van de website
+assets/                     TradingView Lightweight Charts (Apache 2.0)
+tests/                      tests (lookahead, risico, CSV-formaten, opslag)
 ```
 
 > Disclaimer: een backtest is geen garantie voor toekomstige resultaten. Demo-resultaten op
