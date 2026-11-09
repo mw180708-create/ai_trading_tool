@@ -3,33 +3,46 @@
 Python backtester die de regels uit het Trading Plan 2026-2028 strikt en emotieloos toepast op
 **BTCUSD** en **XAUUSD**: Bias (MTF confluence) → POI → POI-in-POI confirmation → Entry → BE/TP/SL.
 
-## 🌐 De website (aanbevolen)
+## 🌐 Het platform (website)
 
-Alles via de browser, in een donker trading-dashboard:
+Een backtest-platform waarop **iedereen** met een eigen account zijn **eigen strategie** test op **eigen data**.
 
 | Pagina | Wat je er doet |
 |---|---|
-| 🏠 **Dashboard** | Koersgrafiek (1m t/m 1W) met je trades, **Bias Engine** (liquiditeit / balance / bias per timeframe), beslissing volgens de regels, bias-score, markt-overzicht en performance |
-| 📁 **Data** | Bibliotheek met al je data · CSV's uploaden (MT4/MT5/TradingView) · BTC direct downloaden (Binance/Bitstamp) · demo-modus |
-| ▶️ **Backtest** | Assets en instellingen kiezen, backtest starten |
-| 📊 **Resultaten** | KPI's, equity curve, resultaat per trade en per maand, exits, uitsplitsingen, BTC vs goud |
-| 📋 **Trades** | Alle trades filteren en downloaden; klik een trade om hem op de grafiek te zien (POI, entry, SL, TP) |
+| 👋 **Welkom** | Account maken, inloggen of eerst als gast proberen (demo-data) |
+| 🏠 **Dashboard** | Grafiek (1m t/m 1W) met je trades, actuele stand van je strategie (Bias Engine of voorwaarden), performance |
+| 🧠 **Strategieën** | Strategie bouwen zonder code (sjablonen of leeg), bewerken, dupliceren, delen met de community, community-strategieën kopiëren |
+| 📁 **Data** | Eigen bibliotheek · gedeelde bibliotheek · CSV's uploaden (elke markt) · crypto downloaden · demo |
+| ▶️ **Backtest** | Strategie + markten + periode + kosten per markt kiezen en draaien |
+| 📊 **Resultaten** / 📋 **Trades** | KPI's, equity curve, per maand, uitsplitsingen, elke trade op de grafiek; laatste 30 runs bewaard |
+
+**Strategie-typen**
+- *Indicatoren & regels*: SMA, EMA, RSI, ATR, MACD, Bollinger, Stochastic, hoogste/laagste N candles, % verandering, vaste
+  getallen; vergelijkingen (>, <, kruist boven/onder) op elke timeframe; SL (ATR / % / swing / vast), TP (RR / ATR / % / vast /
+  geen), break-even, trailing stop, max. duur, exit bij tegengesteld signaal, handelsuren.
+- *Smart Money (POI & liquiditeit)*: het Trading Plan 2026-2028, volledig instelbaar (combinaties, POI-timeframes,
+  confirmatie, RR, break-even).
+
+**Accounts & privacy**: wachtwoorden als scrypt-hash; per gebruiker een eigen map `data/store/users/<naam>/`;
+alleen strategie-*regels* worden gedeeld, nooit data of resultaten. Na 5 foute inlogpogingen 5 minuten blokkade.
 
 **Online zetten (gratis, via Streamlit Community Cloud):**
 1. https://share.streamlit.io → **Continue with GitHub** → **Create app**.
 2. Repository `mw180708-create/ai_trading_tool`, branch `main`, main file `streamlit_app.py` → **Deploy**.
 
-**Data blijvend bewaren (aanbevolen):** de online website wist zijn eigen schijf bij een herstart. Koppel daarom GitHub
-via **📁 Data → GitHub koppelen**: maak een token (classic token met vinkje `repo` is het makkelijkst), plak het op de
-website en klik *Testen & koppelen*. Je krijgt dan precies de tekst die je in Streamlit → **⋮ → Settings → Secrets** plakt:
+**Instellingen voor de beheerder** (Streamlit → app → ⋮ → Settings → **Secrets**):
 ```toml
-GITHUB_TOKEN = "ghp_..."
+GITHUB_TOKEN = "ghp_..."                         # blijvende opslag van accounts, data en resultaten
 GITHUB_REPO = "mw180708-create/ai_trading_tool"
+ADMIN_USERS = "jouw-gebruikersnaam"              # mag gedeelde data beheren en GitHub koppelen
+ALLOW_SIGNUP = "true"                            # "false" = geen nieuwe accounts
 ```
-Uploads, downloads en backtest-resultaten worden dan opgeslagen in `data/store/` van de repository (per jaar, Parquet).
+Zet de repository op **privé**: daar staan alle accounts, data en strategieën. Zonder token bewaart de online website
+alles alleen tot een herstart. Lokaal (`streamlit run app.py` of `START_WEBSITE.bat`) blijft alles bewaard in `.datastore/`.
 
-**Lokaal op je eigen pc:** dubbelklik `START_WEBSITE.bat` (Windows) of `streamlit run app.py`. Lokaal blijft data
-ook zonder GitHub bewaard in de map `.datastore/`.
+**Grenzen van deze versie** (voor een groot publiek platform nodig): een echte database + bestandsopslag i.p.v. GitHub,
+krachtigere hosting (Streamlit Community Cloud heeft ±1 GB geheugen), e-mailverificatie en "wachtwoord vergeten",
+betaalde abonnementen, en een beveiligingsaudit.
 
 ## Installatie
 
@@ -135,6 +148,9 @@ trading_tool/backtester.py  event-driven engine en trade management
 trading_tool/metrics.py     rapportage
 trading_tool/synthetic.py   synthetische testdata
 trading_tool/live.py        Bias Engine: actuele stand van de regels
+trading_tool/rules_engine.py regel-strategieën met indicatoren (zonder code)
+trading_tool/strategies.py  strategie-schema, sjablonen, validatie, run
+trading_tool/accounts.py    accounts (scrypt-hash, blokkade na foute pogingen)
 trading_tool/storage.py     databibliotheek (lokaal + GitHub)
 trading_tool/github_sync.py commits via de GitHub API
 trading_tool/downloaders.py BTC-data downloaden (Binance / Bitstamp)

@@ -20,25 +20,28 @@ def _welcome() -> None:
     with st.container(key="panelglow_welcome"):
         st.markdown("### Welkom 👋")
         html_block('<ol class="steps">'
-                   '<li><b>Voeg data toe</b>: upload een export uit MetaTrader/TradingView, of download BTC-data direct.</li>'
-                   '<li><b>Start een backtest</b> met de regels van het Trading Plan 2026-2028.</li>'
-                   '<li><b>Bekijk</b> resultaten, grafieken en elke trade in detail.</li></ol>')
-        c1, c2, _ = st.columns([1, 1, 2])
-        if c1.button("📁  Data toevoegen", type="primary", width="stretch"):
+                   '<li><b>Kies of bouw een strategie</b>: vanuit een sjabloon (o.a. het Trading Plan 2026-2028, EMA-crossover, '
+                   'RSI, Donchian) of helemaal zelf.</li>'
+                   '<li><b>Voeg data toe</b>: upload een export uit MetaTrader/TradingView (elke markt) of download crypto direct.</li>'
+                   '<li><b>Backtest</b> en bekijk resultaten, grafieken en elke trade in detail.</li></ol>')
+        c1, c2, c3, _ = st.columns([1, 1, 1, 1])
+        if c1.button("🧠  Strategie maken", type="primary", width="stretch"):
+            nav.go("strategies")
+        if c2.button("📁  Data toevoegen", width="stretch"):
             nav.go("data")
-        if c2.button("🧪  Probeer met demo-data", width="stretch"):
+        if c3.button("🧪  Probeer met demo-data", width="stretch"):
             st.session_state["demo"] = True
             st.rerun()
 
 
 @st.cache_data(show_spinner=False, max_entries=24)
-def _payload(symbol: str, tf: str, fp: str) -> dict:
-    m = S._mtf(symbol, fp)
+def _payload(ns: str, symbol: str, tf: str, fp: str) -> dict:
+    m = S._mtf(ns, symbol, fp)
     return candles_payload(m[tf], max_bars=3000)
 
 
 @st.fragment
-def chart_panel(symbol: str) -> None:
+def chart_panel(symbol: str, strategy: dict) -> None:
     m = S.mtf(symbol)
     tfs = [t for t in CHART_TFS if t in m]
     default = "4H" if "4H" in tfs else tfs[-1]
@@ -51,14 +54,14 @@ def chart_panel(symbol: str) -> None:
                        f'<span class="{tone_of(chg)}">{chg:+.2f}%</span></div>')
         tf = st.segmented_control("Timeframe", tfs, default=default, key=f"dash_tf_{symbol}",
                                   label_visibility="collapsed") or default
-        payload = _payload(symbol, tf, S.fingerprint())
+        payload = _payload(S.namespace(), symbol, tf, S.fingerprint())
         res = S.get_results()
         trades = res.trades_for(symbol) if res and symbol in res.symbols else pd.DataFrame()
         markers = trade_markers(trades, m[tf].index[-3000:])
-        lv = S.live(symbol)
+        lv = S.live(symbol, strategy) if strategy["type"] == "smc" else None
         lines = []
         if lv:
-            near = sorted(lv.pois, key=lambda p: abs(p.distance_pct))[:3]
+            near = sorted(lv.pois, key=lambda p: abs(p.distance_pct))[:2]
             for p in near:
                 col = UP if p.direction == 1 else DOWN
                 lines += [{"price": p.top, "color": col, "title": f"{p.tf} POI", "style": 2},
@@ -68,8 +71,52 @@ def chart_panel(symbol: str) -> None:
                    "goud/blauw = EMA 20/50 · scroll om te zoomen, sleep om te schuiven.")
 
 
-def _engine_panel(symbol: str) -> None:
-    lv = S.live(symbol)
+def _rules_panel(symbol: str, strategy: dict) -> None:
+    lv = S.live(symbol, strategy)
+    with st.container(key="panelglow_engine"):
+        ptitle("Strategie-status · " + symbol)
+        if not lv or lv.get("error"):
+            st.caption(f"Kan de voorwaarden niet berekenen: {lv.get('error') if lv else 'geen data'}")
+            return
+        total_ok, total = 0, 0
+        signal_side = None
+        for side, icon in (("long", "🟢 Long"), ("short", "🔴 Short")):
+            info = lv["sides"].get(side, {})
+            if not info.get("rows"):
+                continue
+            chip = '<span class="chip bull">SIGNAAL</span>' if info["signal"] else ""
+            html_block(f'<div style="margin:6px 0 2px 0;font-weight:600">{icon} '
+                       f'<span class="small-note">({"alle" if info["logic"] == "all" else "één van"})</span> {chip}</div>')
+            rows = []
+            for r in info["rows"]:
+                total += 1
+                total_ok += r["ok"]
+                vals = "" if r["left"] is None else f'<span class="small-note"> {r["left"]:,.2f} vs {r["right"]:,.2f}</span>' \
+                    if r["right"] is not None else ""
+                rows.append(f'<div class="engine-row" style="grid-template-columns:28px 1fr">'
+                            f'<span class="chip {"bull" if r["ok"] else "bear"}">{"✓" if r["ok"] else "✗"}</span>'
+                            f'<span>{esc(r["text"])}{vals}</span></div>')
+            html_block("".join(rows))
+            if info["signal"] and signal_side is None:
+                signal_side = side
+    with st.container(key="panel_decision"):
+        ptitle("Beslissing (volgens de regels)")
+        if signal_side:
+            title, cls = f"🟢 {signal_side.upper()} SIGNAAL", "signal"
+            detail = "Alle voorwaarden kloppen op de laatste gesloten candle. Entry volgens je SL/TP-regels."
+        else:
+            title, cls = "⚪ GEEN SIGNAAL", "none"
+            detail = f"{total_ok} van {total} voorwaarden kloppen op de laatste gesloten candle."
+        html_block(f'<div class="decision {cls}"><div class="decision-title">{title}</div>'
+                   f'<div class="decision-detail">{esc(detail)}</div></div>')
+        st.caption(f"Laatste {lv['tf']}-candle: {lv['time']:%d-%m-%Y %H:%M} UTC · geen financieel advies.")
+
+
+def _engine_panel(symbol: str, strategy: dict) -> None:
+    if strategy["type"] != "smc":
+        _rules_panel(symbol, strategy)
+        return
+    lv = S.live(symbol, strategy)
     with st.container(key="panelglow_engine"):
         ptitle("Bias Engine · " + symbol)
         if lv is None:
@@ -96,7 +143,7 @@ def _engine_panel(symbol: str) -> None:
         st.caption(f"Laatste candle: {lv.time:%d-%m-%Y %H:%M} UTC · geen financieel advies.")
 
 
-def _left_panels(res: S.Results | None, symbol: str) -> None:
+def _left_panels(res: S.Results | None, symbol: str, strategy: dict) -> None:
     with st.container(key="panel_portfolio"):
         if res:
             view = "TOTAAL" if len(res.symbols) > 1 else res.symbols[0]
@@ -110,6 +157,7 @@ def _left_panels(res: S.Results | None, symbol: str) -> None:
     with st.container(key="panel_bt"):
         ptitle("Backtest")
         if res:
+            st.caption(res.meta.get("strategy_name", "Trading Plan"))
             m = compute_metrics(res.trades_for(symbol) if symbol in res.symbols else pd.DataFrame(),
                                 res.equity[symbol] if symbol in res.symbols else pd.Series(dtype=float),
                                 res.initial.get(symbol, 1))
@@ -125,10 +173,11 @@ def _left_panels(res: S.Results | None, symbol: str) -> None:
             st.caption("Start een backtest om hier resultaten te zien.")
         if st.button("▶  Backtest starten", width="stretch", key="dash_bt"):
             nav.go("backtest")
-    lv = S.live(symbol)
-    with st.container(key="panel_gauge"):
-        ptitle("Bias-score (1M → 1H)")
-        st.plotly_chart(gauge(lv.score if lv else 50, 170), width="stretch", config=PLOTLY_CONFIG)
+    if strategy["type"] == "smc":
+        lv = S.live(symbol, strategy)
+        with st.container(key="panel_gauge"):
+            ptitle("Bias-score (1M → 1H)")
+            st.plotly_chart(gauge(lv.score if lv else 50, 170), width="stretch", config=PLOTLY_CONFIG)
 
 
 def _bottom(res: S.Results | None, syms: list[str]) -> None:
@@ -173,11 +222,22 @@ def render() -> None:
         _welcome()
         return
     res = S.get_results()
-    head = st.columns([2, 3])
+    head = st.columns([2, 1.4, 1.6])
     with head[0]:
-        symbol = st.segmented_control("Asset", syms, default=syms[0], key="dash_symbol",
+        symbol = st.segmented_control("Markt", syms[:6], default=syms[0], key="dash_symbol",
                                       label_visibility="collapsed") or syms[0]
+        if len(syms) > 6:
+            more = st.selectbox("Andere markt", ["–"] + syms[6:], key="dash_more", label_visibility="collapsed")
+            symbol = more if more != "–" else symbol
+    choices = S.strategy_choices()
     with head[1]:
+        ids = [c["id"] for c in choices]
+        last = res.meta.get("strategy_id") if res else None
+        sid = st.selectbox("Strategie", ids, index=ids.index(last) if last in ids else 0, key="dash_strategy",
+                           format_func=lambda i: "🧠 " + next(c["name"] for c in choices if c["id"] == i),
+                           label_visibility="collapsed")
+        strategy = next(c for c in choices if c["id"] == sid)
+    with head[2]:
         tags = [badge("Demo-data (nep)", "warn")] if S.demo_on() else []
         st_ = S.store()
         tags.append(badge("Opslag: GitHub ✓", "ok") if st_.synced else badge("Opslag: tijdelijk", "warn"))
@@ -191,9 +251,9 @@ def render() -> None:
         return
     left, center, right = st.columns([1.05, 3.2, 1.45], gap="medium")
     with left:
-        _left_panels(res, symbol)
+        _left_panels(res, symbol, strategy)
     with center:
-        chart_panel(symbol)
+        chart_panel(symbol, strategy)
     with right:
-        _engine_panel(symbol)
+        _engine_panel(symbol, strategy)
     _bottom(res, syms)

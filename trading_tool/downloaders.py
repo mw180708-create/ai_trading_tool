@@ -37,13 +37,16 @@ def _frame(rows: list[list], unit: str) -> pd.DataFrame:
     return df[~df.index.duplicated(keep="last")].sort_index()
 
 
+CRYPTO = ["BTC", "ETH", "SOL", "XRP", "BNB", "ADA", "DOGE", "LTC", "LINK", "AVAX"]
+
+
 def binance_klines(tf: str, start, end, progress: Progress | None = None,
-                   session: requests.Session | None = None) -> pd.DataFrame:
+                   session: requests.Session | None = None, base: str = "BTC") -> pd.DataFrame:
     s = session or requests.Session()
     t0, t1 = int(_ts(start).timestamp() * 1000), int(_ts(end).timestamp() * 1000)
     cur, rows = t0, []
     while cur < t1:
-        r = s.get(BINANCE, params={"symbol": "BTCUSDT", "interval": BINANCE_TF[tf], "startTime": cur,
+        r = s.get(BINANCE, params={"symbol": f"{base}USDT", "interval": BINANCE_TF[tf], "startTime": cur,
                                    "endTime": t1 - 1, "limit": 1000}, timeout=30)
         r.raise_for_status()
         batch = r.json()
@@ -60,14 +63,15 @@ def binance_klines(tf: str, start, end, progress: Progress | None = None,
 
 
 def bitstamp_ohlc(tf: str, start, end, progress: Progress | None = None,
-                  session: requests.Session | None = None) -> pd.DataFrame:
+                  session: requests.Session | None = None, base: str = "BTC") -> pd.DataFrame:
     base_tf = tf if tf in BITSTAMP_STEP else "1D"
     step = BITSTAMP_STEP[base_tf]
     s = session or requests.Session()
     t0, t1 = int(_ts(start).timestamp()), int(_ts(end).timestamp())
     cur, rows = t0, []
     while cur < t1:
-        r = s.get(BITSTAMP, params={"step": step, "limit": 1000, "start": cur}, timeout=30)
+        r = s.get(BITSTAMP.replace("btcusd", f"{base.lower()}usd"), params={"step": step, "limit": 1000, "start": cur},
+                  timeout=30)
         r.raise_for_status()
         batch = r.json().get("data", {}).get("ohlc", [])
         batch = [b for b in batch if int(b["timestamp"]) < t1]
@@ -89,18 +93,24 @@ def bitstamp_ohlc(tf: str, start, end, progress: Progress | None = None,
 
 def download_btc(tf: str, start, end=None, source: str = "auto",
                  progress: Progress | None = None) -> tuple[pd.DataFrame, str]:
-    """Download BTCUSD candles. Retourneert (data, gebruikte bron)."""
+    return download_crypto("BTC", tf, start, end, source, progress)
+
+
+def download_crypto(base: str, tf: str, start, end=None, source: str = "auto",
+                    progress: Progress | None = None) -> tuple[pd.DataFrame, str]:
+    """Download <base>USD candles (Binance <base>/USDT, terugval Bitstamp <base>/USD). Retourneert (data, bron)."""
+    base = base.upper()
     end = end or pd.Timestamp.now(tz="UTC")
     errors = []
     order = {"auto": ["binance", "bitstamp"], "binance": ["binance"], "bitstamp": ["bitstamp"]}[source]
     for src in order:
         try:
             fn = binance_klines if src == "binance" else bitstamp_ohlc
-            df = fn(tf, start, end, progress)
+            df = fn(tf, start, end, progress, base=base)
             # laatste (nog niet gesloten) candle weglaten
             now = pd.Timestamp.now(tz="UTC")
             df = df[df.index + pd.Timedelta(seconds=TF_SECONDS[tf]) <= now]
-            return df, {"binance": "Binance (BTC/USDT)", "bitstamp": "Bitstamp (BTC/USD)"}[src]
+            return df, {"binance": f"Binance ({base}/USDT)", "bitstamp": f"Bitstamp ({base}/USD)"}[src]
         except Exception as e:  # noqa: BLE001 - probeer volgende bron
             errors.append(f"{src}: {e}")
     raise RuntimeError("Downloaden mislukt - " + " | ".join(errors))

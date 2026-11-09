@@ -86,6 +86,12 @@ CONFIRMATION_TF: dict[str, str] = {
 
 @dataclass
 class StrategyConfig:
+    # Stap 1-3 van het plan (instelbaar per strategie)
+    bias_combos: list = field(default_factory=lambda: [[list(c), k] for c, k in BIAS_COMBOS])
+    poi_timeframes: list = field(default_factory=lambda: list(POI_TIMEFRAMES))
+    scalp_poi_timeframes: list = field(default_factory=lambda: list(SCALP_POI_TIMEFRAMES))
+    swing_poi_timeframes: list = field(default_factory=lambda: sorted(SWING_POI_TIMEFRAMES))
+    confirmation_tf: dict = field(default_factory=lambda: dict(CONFIRMATION_TF))
     # Fractal-lengte (bars links/rechts) om swing highs/lows te bevestigen
     swing_length: dict[str, int] = field(default_factory=lambda: {
         "1M": 2, "1W": 2, "1D": 3, "4H": 3, "1H": 3, "15m": 3, "5m": 3, "1m": 3,

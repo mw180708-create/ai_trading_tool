@@ -18,7 +18,32 @@ R2 = st.column_config.NumberColumn(format="%.2f")
 USD = st.column_config.NumberColumn(format="dollar")
 
 
-def no_results() -> bool:
+def run_picker(key: str) -> None:
+    runs = S.list_runs()
+    if not runs:
+        return
+    ids = [r for r, _ in runs]
+    meta = dict(runs)
+    cur = st.session_state.get("run_id") if st.session_state.get("run_id") in ids else ids[0]
+
+    def label(rid: str) -> str:
+        m = meta.get(rid, {})
+        return (f"{str(m.get('run_at', rid))[:16]} · {m.get('strategy_name', 'Trading Plan')} · "
+                f"{', '.join(m.get('symbols') or list((m.get('initial') or {}).keys()))}")
+    c1, c2 = st.columns([4, 1])
+    pick = c1.selectbox("Backtest", ids, index=ids.index(cur), format_func=label, key=f"{key}_run",
+                        label_visibility="collapsed")
+    if pick != st.session_state.get("run_id"):
+        S.select_run(pick)
+        st.rerun()
+    if c2.button("🗑  Verwijderen", key=f"{key}_delrun", width="stretch"):
+        S.delete_run(pick)
+        S.flash("Backtest verwijderd.", "warning")
+        st.rerun()
+
+
+def no_results(key: str = "res") -> bool:
+    run_picker(key)
     res = S.get_results()
     if res is None:
         st.info("Nog geen resultaten. Start eerst een backtest.")
@@ -33,7 +58,7 @@ def no_results() -> bool:
 def render() -> None:
     st.markdown("## 📊 Resultaten")
     S.show_flash()
-    if no_results():
+    if no_results("res"):
         return
     res = S.get_results()
     views = res.views()
@@ -41,8 +66,8 @@ def render() -> None:
     view = top[0].segmented_control("Bekijk", views, default=views[-1], key="res_view",
                                     label_visibility="collapsed") or views[-1]
     if res.meta.get("run_at"):
-        top[1].markdown(f"<div style='text-align:right' class='small-note'>Backtest van {res.meta['run_at']}</div>",
-                        unsafe_allow_html=True)
+        top[1].markdown(f"<div style='text-align:right' class='small-note'>Strategie <b>{res.meta.get('strategy_name', 'Trading Plan')}</b>"
+                        f" · {res.meta['run_at']}</div>", unsafe_allow_html=True)
     trades, equity, initial = res.trades_for(view), res.equity_for(view), res.initial_for(view)
     m = compute_metrics(trades, equity, initial)
     if not m.get("Trades"):
@@ -55,7 +80,7 @@ def render() -> None:
         kpi("Winrate", f"{m['Winrate %']:.1f}%", f"BE-exits {m['Break-even %']:.0f}%"),
         kpi("Profit factor", "∞" if np.isinf(pf) else f"{pf:.2f}", "> 1 = winstgevend", tone_of(pf - 1)),
         kpi("Max drawdown", f"{m['Max DD %']:.1f}%", "op gesloten trades", "down"),
-        kpi("Trades", f"{m['Trades']}", f"{m['Swing']} swing · {m['Intraday']} intraday · {m['Scalp']} scalp"),
+        kpi("Trades", f"{m['Trades']}", " · ".join(f"{n} {t.lower()}" for t, n in trades["trade_type"].value_counts().items())),
         kpi("Gem. RR", f"{m['Avg planned RR']:.2f}", f"{m['Avg R/trade']:+.2f} R per trade", tone_of(m["Avg R/trade"])),
     ]
     cols = st.columns(6)
@@ -114,20 +139,23 @@ def render() -> None:
         st.plotly_chart(style(fig, 260, legend=False), width="stretch", config=PLOTLY_CONFIG)
 
     t1, t2 = st.columns(2)
-    for col, key, title, label in [(t1, "trade_type", "Per trade type", "Type"), (t2, "poi_tf", "Per POI-timeframe", "POI")]:
+    second = ("poi_tf", "Per POI-timeframe", "POI") if res.is_smc else ("exit_reason", "Per exit-reden", "Exit")
+    for col, key, title, label in [(t1, "trade_type", "Per trade type", "Type"), (t2, *second)]:
         with col, st.container(key=f"panel_{key}"):
             ptitle(title)
             b = breakdown_by(trades, key).reset_index().rename(columns={"symbol": "Asset", key: label})
             st.dataframe(b, hide_index=True, width="stretch", column_config={
                 "Winrate %": PCT, "Avg R": st.column_config.NumberColumn("Gem. R", format="%.2f"),
                 "Total R": st.column_config.NumberColumn("Totaal R", format="%.2f"), "Net Profit": USD})
-    st.caption("Swing = Monthly/Weekly POI (BE bij 2R) · Intraday = Daily/4H/1H POI (BE bij 4R) · "
-               "Scalp = alleen 1D+4H+1H match (BE bij 4R)")
+    if res.is_smc:
+        st.caption("Swing = Monthly/Weekly POI · Intraday = Daily/4H/1H POI · Scalp = alleen via een scalp-combinatie")
 
     with st.container(key="panel_compare"):
-        ptitle("BTCUSD vs XAUUSD")
+        ptitle("Per markt")
         rows = {s: compute_metrics(res.trades_for(s), res.equity_for(s), res.initial_for(s)) for s in res.views()}
         comp = pd.DataFrame(rows)
+        if not res.is_smc:
+            comp = comp.drop(index=[i for i in ("Swing", "Intraday", "Scalp") if i in comp.index])
         comp = format_report(comp, money_rows=("Net Profit",))
         comp.index = [{"Avg planned RR": "Gem. geplande RR", "Avg win R": "Gem. winst (R)", "Avg R/trade": "Gem. R per trade",
                        "Total R": "Totaal R", "Max DD %": "Max drawdown %", "Net Profit %": "Net profit %"}.get(i, i)

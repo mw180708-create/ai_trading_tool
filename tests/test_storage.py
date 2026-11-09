@@ -112,15 +112,27 @@ def test_github_sync_commits_and_deletes(tmp_path):
     assert store.load("BTCUSD", "1D") is None   # tombstone verbergt de oude repo-kopie
 
 
-def test_results_roundtrip(tmp_path):
-    store = DataStore(tmp_path)
+def test_runs_history_and_namespaces(tmp_path):
+    alice = DataStore(tmp_path, namespace="users/alice")
+    bob = DataStore(tmp_path, namespace="users/bob")
+    shared = DataStore(tmp_path)
     trades = pd.DataFrame({"symbol": ["BTCUSD"], "r_multiple": [1.5],
                            "entry_time": [pd.Timestamp("2024-01-01", tz="UTC")]})
     eq = pd.DataFrame({"symbol": ["BTCUSD"] * 2, "time": pd.to_datetime(["2024-01-01", "2024-01-02"], utc=True),
                        "equity": [100.0, 101.5]})
-    store.save_results(trades, eq, {"run_at": "x", "initial": {"BTCUSD": 100.0}})
-    t, e, meta = store.load_results()
-    assert t["r_multiple"].iloc[0] == 1.5 and e["equity"].iloc[-1] == 101.5 and meta["run_at"] == "x"
+    for i in range(3):
+        alice.save_run(f"2024010{i}-000000-x", trades, eq, {"run_at": str(i)}, keep=2)
+    assert alice.list_runs() == ["20240102-000000-x", "20240101-000000-x"]   # oudste opgeruimd
+    t, e, meta = alice.load_run("20240102-000000-x")
+    assert t["r_multiple"].iloc[0] == 1.5 and e["equity"].iloc[-1] == 101.5 and meta["run_at"] == "2"
+    # data en documenten zijn gescheiden per gebruiker
+    alice.save("XAUUSD", "1D", _sample("2022-01-01", "2023-03-01", "1D"))
+    alice.put_json("strategies/s1.json", {"name": "Mijn strategie"}, "test")
+    assert bob.symbols() == [] and bob.list_files("strategies") == [] and bob.list_runs() == []
+    assert shared.symbols() == []          # gedeelde bibliotheek ziet gebruikersmappen niet als assets
+    assert alice.get_json("strategies/s1.json")["name"] == "Mijn strategie"
+    alice.delete_files(["strategies/s1.json"], "weg")
+    assert alice.list_files("strategies") == []
 
 
 def test_live_state():
@@ -174,3 +186,35 @@ def test_push_unsynced_after_connecting(tmp_path):
     rep = store.push_unsynced()
     assert rep.synced and rep.total == 2 and len(fake.files) == 2
     assert store.unsynced_files() == [] and set(store.datasets()["Opslag"]) == {"GitHub ✓"}
+
+
+def test_commit_retries_when_branch_moved(tmp_path):
+    class Racy(FakeGitHub):
+        def __init__(self):
+            super().__init__()
+            self.patches = 0
+
+        def request(self, method, url, timeout=None, json=None, params=None):
+            if method == "PATCH":
+                self.patches += 1
+                if self.patches == 1:          # iemand anders committe net -> GitHub weigert
+                    return FakeResp({"message": "Update is not a fast forward"}, 422)
+            return super().request(method, url, timeout=timeout, json=json, params=params)
+    fake = Racy()
+    gh = GitHubSync(token="t", repo="owner/repo", session=fake)
+    gh.commit_files({"a.txt": b"x"}, "test")
+    assert fake.patches == 2 and fake.files == {"a.txt": b"x"}
+
+
+def test_user_files_go_to_user_folder_on_github(tmp_path):
+    from trading_tool.accounts import Accounts
+    fake = FakeGitHub()
+    acc = Accounts(tmp_path, github=GitHubSync(token="t", repo="owner/repo", session=fake))
+    assert acc.register("dana", "lang-genoeg-123")[0]
+    acc.store_for("dana").save("EURUSD", "1H", _sample("2023-01-01", "2023-03-01", "1h"))
+    acc.store_for("dana").put_json("strategies/x.json", {"id": "x"}, "s")
+    paths = sorted(fake.files)
+    assert "data/store/users/dana/account/profile.json" in paths
+    assert "data/store/users/dana/EURUSD/H1/2023.parquet" in paths
+    assert "data/store/users/dana/strategies/x.json" in paths
+    assert all(p.startswith("data/store/users/dana/") for p in paths)

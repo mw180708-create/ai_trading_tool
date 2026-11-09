@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import base64
 import os
+import time
 from dataclasses import dataclass
 
 import requests
@@ -75,21 +76,33 @@ class GitHubSync:
             return False, f"Schrijftest mislukt ({w.status_code}): {w.text[:200]}"
         return True, f"Verbonden met {info.get('full_name', self.repo)} - lezen en schrijven werkt."
 
-    def commit_files(self, files: dict[str, bytes | None], message: str) -> str:
-        """Schrijf (bytes) of verwijder (None) meerdere bestanden in één commit. Retourneert commit-sha."""
+    def commit_files(self, files: dict[str, bytes | None], message: str, attempts: int = 4) -> str:
+        """Schrijf (bytes) of verwijder (None) meerdere bestanden in één commit. Retourneert commit-sha.
+
+        Slaan meerdere gebruikers tegelijk iets op, dan kan GitHub de commit weigeren omdat de branch net is
+        veranderd; dan wordt het automatisch opnieuw geprobeerd op de nieuwste versie."""
         if not files:
             return ""
+        blobs: dict[str, str | None] = {}
+        for path, content in files.items():
+            blobs[path] = None if content is None else self._req("POST", "/git/blobs", json={
+                "content": base64.b64encode(content).decode(), "encoding": "base64"})["sha"]
+        last_err = None
+        for i in range(attempts):
+            try:
+                return self._commit_tree(blobs, message)
+            except GitHubError as e:
+                last_err = e
+                if " 422 " not in str(e) and " 409 " not in str(e):
+                    raise
+                time.sleep(0.5 * (i + 1))
+        raise last_err  # type: ignore[misc]
+
+    def _commit_tree(self, blobs: dict[str, str | None], message: str) -> str:
         ref = self._req("GET", f"/git/ref/heads/{self.branch}")
         head_sha = ref["object"]["sha"]
         base_tree = self._req("GET", f"/git/commits/{head_sha}")["tree"]["sha"]
-        tree = []
-        for path, content in files.items():
-            if content is None:
-                tree.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
-                continue
-            blob = self._req("POST", "/git/blobs", json={
-                "content": base64.b64encode(content).decode(), "encoding": "base64"})
-            tree.append({"path": path, "mode": "100644", "type": "blob", "sha": blob["sha"]})
+        tree = [{"path": p, "mode": "100644", "type": "blob", "sha": sha} for p, sha in blobs.items()]
         new_tree = self._req("POST", "/git/trees", json={"base_tree": base_tree, "tree": tree})
         commit = self._req("POST", "/git/commits", json={
             "message": message, "tree": new_tree["sha"], "parents": [head_sha]})

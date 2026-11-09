@@ -10,7 +10,7 @@ import streamlit as st
 
 from trading_tool.config import TIMEFRAMES, normalize_tf
 from trading_tool.data_loader import detect_tf, read_ohlc_csv
-from trading_tool.downloaders import download_btc
+from trading_tool.downloaders import CRYPTO, download_crypto
 
 from .. import state as S
 from ..charts import candles_payload, tv_chart
@@ -28,13 +28,21 @@ def tf_from_name(name: str) -> str | None:
     return None
 
 
+def clean_symbol(sym: str) -> str:
+    s = re.sub(r"[^A-Z0-9]", "", str(sym or "").upper())
+    return s[:20]
+
+
 def symbol_from_name(name: str) -> str | None:
     up = Path(name).stem.upper()
     if "XAU" in up or "GOLD" in up:
         return "XAUUSD"
     if "BTC" in up or "XBT" in up:
         return "BTCUSD"
-    return None
+    first = re.split(r"[_\-\s,.]+", up)[0]
+    first = re.sub(r"^(OANDA|FX|BINANCE|CAPITALCOM|PEPPERSTONE|ICMARKETS|FOREXCOM)[:_]?", "", first)
+    cleaned = clean_symbol(first)
+    return cleaned if len(cleaned) >= 3 and not cleaned.isdigit() else None
 
 
 @st.cache_data(show_spinner=False, max_entries=16)
@@ -108,6 +116,15 @@ def _connect_wizard(status: dict) -> None:
 def _storage_panel() -> None:
     store = S.store()
     status = S.github_status()
+    can_manage = S.is_admin() or (not S.admins() and not status.get("ok"))
+    if S.is_guest():
+        st.info("Je bent ingelogd als **gast**: je data wordt niet blijvend bewaard. Maak een gratis account om alles te bewaren.")
+        return
+    if not can_manage:
+        st.markdown(badge("Je data wordt blijvend bewaard ✓", "ok") if store.synced else
+                    badge("Opslag: tijdelijk (de beheerder heeft nog geen blijvende opslag gekoppeld)", "warn"),
+                    unsafe_allow_html=True)
+        return
     with st.container(key="panel_storage"):
         if store.synced:
             src = {"secrets": "Secrets (blijvend)", "website": "op de website geplakt (tot herstart)",
@@ -152,44 +169,67 @@ def _storage_panel() -> None:
             _connect_wizard(status)
 
 
-def _library() -> None:
-    store = S.store()
+def _library(store, editable: bool, key: str) -> None:
     df = store.datasets()
     if df.empty:
-        st.info("De bibliotheek is nog leeg. Kies hierboven **Uploaden** of **Downloaden** om data toe te voegen.")
+        st.info("Nog geen data. Kies hierboven **Uploaden** of **Downloaden**." if editable else
+                "Er staat nog geen gedeelde data klaar.")
         return
+    df = df.rename(columns={"Asset": "Markt"})
     st.dataframe(df, hide_index=True, width="stretch", column_config={
         "Bars": st.column_config.NumberColumn(format="%d"),
         "Grootte (MB)": st.column_config.NumberColumn(format="%.2f")})
-    labels = [f"{r.Asset} · {r.Timeframe}" for r in df.itertuples()]
+    labels = [f"{r.Markt} · {r.Timeframe}" for r in df.itertuples()]
     c1, c2 = st.columns([2, 1])
-    pick = c1.selectbox("Dataset bekijken of verwijderen", range(len(labels)), format_func=lambda i: labels[i])
+    pick = c1.selectbox("Dataset bekijken" + (" of verwijderen" if editable else ""), range(len(labels)),
+                        format_func=lambda i: labels[i], key=f"{key}_pick")
     row = df.iloc[pick]
-    with c2:
-        st.write("")
-        confirm = st.checkbox("Ja, verwijderen", key="del_confirm")
-        if st.button("🗑️  Verwijderen", disabled=not confirm, width="stretch"):
-            rep = store.delete(row["Asset"], row["Timeframe"])
-            msg = f"{row['Asset']} {row['Timeframe']} verwijderd."
-            if rep.error:
-                msg += f" (GitHub: {rep.error})"
-            S.flash(msg, "warning" if rep.error else "success")
-            st.session_state.pop("del_confirm", None)
-            st.rerun()
-    data = store.load(row["Asset"], row["Timeframe"])
+    if editable:
+        with c2:
+            st.write("")
+            confirm = st.checkbox("Ja, verwijderen", key=f"{key}_del_confirm")
+            if st.button("🗑️  Verwijderen", disabled=not confirm, width="stretch", key=f"{key}_del"):
+                rep = store.delete(row["Markt"], row["Timeframe"])
+                msg = f"{row['Markt']} {row['Timeframe']} verwijderd."
+                if rep.error:
+                    msg += f" (GitHub: {rep.error})"
+                S.flash(msg, "warning" if rep.error else "success")
+                st.session_state.pop(f"{key}_del_confirm", None)
+                st.rerun()
+    data = store.load(row["Markt"], row["Timeframe"])
     if data is not None and len(data):
-        tv_chart(candles_payload(data, max_bars=2500), height=360, show_bars=300, key=f"lib_{pick}")
+        tv_chart(candles_payload(data, max_bars=2500), height=360, show_bars=300, key=f"{key}_{pick}")
+
+
+def _target_store():
+    """Eigen bibliotheek, of (alleen voor beheerders) de gedeelde bibliotheek."""
+    if S.is_admin():
+        where = st.radio("Opslaan in", ["Mijn data", "Gedeelde data (voor iedereen)"], horizontal=True, key="target_lib")
+        if where.startswith("Gedeelde"):
+            return S.shared_store(), "gedeelde bibliotheek"
+    return S.store(), "jouw bibliotheek"
+
+
+def _report(store, sym, tf, rep, where: str) -> None:
+    msg = f"{sym} {tf}: {rep.added:,} nieuwe candles toegevoegd aan {where} (totaal {rep.total:,})."
+    if store.synced:
+        msg += " Blijvend bewaard ✓" if rep.synced else f" ⚠️ Blijvend opslaan mislukt: {rep.error}"
+    S.flash(msg, "success" if not rep.error else "warning")
 
 
 def _upload() -> None:
     st.markdown("Sleep je CSV-bestanden hierheen: **TradingView** (*Export chart data*), **MetaTrader 4/5** of "
-                "crypto-exports. Asset en timeframe worden herkend uit de bestandsnaam (bv. `XAUUSD_M1.csv`, "
-                "`BTCUSD_1D.csv`) of de data. Nieuwe data wordt **samengevoegd** met wat er al in de bibliotheek staat.")
+                "crypto-exports – elke markt mag (forex, indices, aandelen, crypto, grondstoffen). Markt en timeframe "
+                "worden herkend uit de bestandsnaam (bv. `EURUSD_M1.csv`, `XAUUSD_D1.csv`). Nieuwe data wordt "
+                "**samengevoegd** met wat er al staat.")
+    target, where = _target_store()
     key = st.session_state.get("upload_key", 0)
     files = st.file_uploader("CSV-bestanden", type=["csv", "txt"], accept_multiple_files=True, key=f"up_{key}",
                              label_visibility="collapsed")
     if not files:
         return
+    known = sorted(set(SYMBOLS) | set(S.symbols()) | {"EURUSD", "GBPUSD", "USDJPY", "NAS100", "US30", "SPX500",
+                                                    "GER40", "ETHUSD", "XAGUSD", "USOIL"})
     plan = []
     for f in files:
         try:
@@ -203,21 +243,22 @@ def _upload() -> None:
         c1, c2, c3 = st.columns([2.2, 1, 1])
         c1.markdown(f"**{f.name}**  \n<span class='small-note'>{len(df):,} bars · {df.index[0]:%Y-%m-%d} → "
                     f"{df.index[-1]:%Y-%m-%d}</span>", unsafe_allow_html=True)
-        sym_guess = symbol_from_name(f.name) or "XAUUSD"
-        sym = c2.selectbox("Asset", SYMBOLS, index=SYMBOLS.index(sym_guess), key=f"sym_{key}_{f.name}")
+        guess = symbol_from_name(f.name) or "EURUSD"
+        opts = known if guess in known else [guess, *known]
+        sym = c2.selectbox("Markt", opts, index=opts.index(guess), key=f"sym_{key}_{f.name}", accept_new_options=True,
+                           help="Kies of typ een eigen naam (bv. NAS100)")
         tf_guess = tf_from_name(f.name) or detect_tf(df)
         tf = c3.selectbox("Timeframe", TIMEFRAMES, index=TIMEFRAMES.index(tf_guess), key=f"tf_{key}_{f.name}")
-        plan.append((f.name, sym, tf, df))
-    if plan and st.button(f"💾  {len(plan)} bestand(en) opslaan in de bibliotheek", type="primary", width="stretch"):
-        store = S.store()
+        plan.append((f.name, clean_symbol(sym), tf, df))
+    bad = [p for p in plan if len(p[1]) < 2]
+    if bad:
+        st.warning("Geef elke markt een naam van minstens 2 tekens.")
+    if plan and not bad and st.button(f"💾  {len(plan)} bestand(en) opslaan in {where}", type="primary", width="stretch"):
         prog = st.progress(0.0)
         for i, (name, sym, tf, df) in enumerate(plan):
             prog.progress(i / len(plan), text=f"Opslaan: {name}")
-            rep = store.save(sym, tf, df, message=f"Data: {sym} {tf} geüpload ({name})")
-            msg = f"{sym} {tf}: {rep.added:,} nieuwe candles toegevoegd (totaal {rep.total:,})."
-            if store.synced:
-                msg += " Bewaard op GitHub ✓" if rep.synced else f" ⚠️ GitHub-sync mislukt: {rep.error}"
-            S.flash(msg, "success" if not rep.error else "warning")
+            rep = target.save(sym, tf, df, message=f"Data: {sym} {tf} geüpload ({name})")
+            _report(target, sym, tf, rep, where)
         prog.progress(1.0)
         st.session_state["upload_key"] = key + 1
         st.rerun()
@@ -230,8 +271,10 @@ PRESETS = {
 
 
 def _download() -> None:
-    st.markdown("**Bitcoin (BTCUSD)** kan direct gedownload worden van Binance (BTC/USDT), met Bitstamp (BTC/USD) "
-                "als reserve. Geen account of API-key nodig.")
+    st.markdown("**Crypto** kan direct gedownload worden van Binance (…/USDT), met Bitstamp (…/USD) als reserve. "
+                "Geen account of API-key nodig.")
+    target, where = _target_store()
+    base = st.selectbox("Munt", CRYPTO, format_func=lambda b: f"{b}USD", key="dl_base")
     mode = st.radio("Wat wil je downloaden?", ["Kant-en-klare set", "Zelf kiezen"], horizontal=True)
     jobs: list[tuple[str, pd.Timestamp, pd.Timestamp]] = []
     now = pd.Timestamp.now(tz="UTC").floor("min")
@@ -247,27 +290,26 @@ def _download() -> None:
         jobs = [(tf, pd.Timestamp(start, tz="UTC"), min(now, pd.Timestamp(end, tz="UTC") + pd.Timedelta(days=1)))
                 for tf in tfs]
     if st.button("⬇️  Downloaden & opslaan", type="primary", width="stretch", disabled=not jobs):
-        store = S.store()
+        sym = f"{base}USD"
         for tf, t0, t1 in jobs:
-            bar = st.progress(0.0, text=f"BTCUSD {tf} downloaden...")
+            bar = st.progress(0.0, text=f"{sym} {tf} downloaden...")
             try:
-                df, src = download_btc(tf, t0, t1, progress=lambda p, m, b=bar, t=tf: b.progress(p, text=f"{t}: {m}"))
+                df, src = download_crypto(base, tf, t0, t1,
+                                          progress=lambda p, m, b=bar, t=tf: b.progress(p, text=f"{t}: {m}"))
             except Exception as e:  # noqa: BLE001
                 bar.empty()
-                st.error(f"BTCUSD {tf}: {e}")
+                st.error(f"{sym} {tf}: {e}")
                 continue
             bar.progress(1.0, text=f"{tf}: opslaan...")
-            rep = store.save("BTCUSD", tf, df, message=f"Data: BTCUSD {tf} gedownload ({src})")
-            msg = f"BTCUSD {tf} ({src}): {rep.added:,} nieuwe candles (totaal {rep.total:,})."
-            if store.synced:
-                msg += " Bewaard op GitHub ✓" if rep.synced else f" ⚠️ GitHub-sync mislukt: {rep.error}"
-            S.flash(msg, "success" if not rep.error else "warning")
+            rep = target.save(sym, tf, df, message=f"Data: {sym} {tf} gedownload ({src})")
+            _report(target, sym, tf, rep, where)
         st.rerun()
     st.divider()
-    st.markdown("**Goud (XAUUSD)** – er is geen gratis bron die automatisch downloaden toestaat. Exporteer daarom uit:")
-    st.markdown("- **MetaTrader 5**: *Beeld → Symbolen* (Ctrl+U) → *XAUUSD* → tab *Bars* → kies timeframe (M1 en D1) "
+    st.markdown("**Forex, goud, indices en aandelen** – daarvoor is geen gratis bron die automatisch downloaden toestaat. "
+                "Exporteer uit je eigen platform:")
+    st.markdown("- **MetaTrader 5**: *Beeld → Symbolen* (Ctrl+U) → kies je markt → tab *Bars* → kies timeframe (M1 en D1) "
                 "en periode → **Opvragen** → **Exporteren**.\n"
-                "- **TradingView**: open XAUUSD → menu naast de chartnaam → **Export chart data…**\n\n"
+                "- **TradingView**: open je markt → menu naast de chartnaam → **Export chart data…**\n\n"
                 "Upload de bestanden daarna bij het tabblad **Uploaden**.")
 
 
@@ -275,7 +317,7 @@ def _demo() -> None:
     on = st.toggle("Demo-data gebruiken (nep, om de website te proberen)", value=S.demo_on())
     if on != S.demo_on():
         st.session_state["demo"] = on
-        S.set_results(None) if on else st.session_state.pop("results", None)
+        st.session_state.pop("results", None)
         st.rerun()
     st.caption("Met demo-data aan gebruikt de hele website gesimuleerde koersen in plaats van je bibliotheek. "
                "Demo-resultaten worden niet opgeslagen.")
@@ -285,17 +327,22 @@ def render() -> None:
     st.markdown("## 📁 Data")
     S.show_flash()
     _storage_panel()
-    sections = ["📚  Bibliotheek", "📤  Uploaden", "🌐  Downloaden", "🧪  Demo"]
+    sections = ["📚  Mijn data", "🌐  Gedeelde data", "📤  Uploaden", "⬇️  Downloaden", "🧪  Demo"]
     section = st.segmented_control("Onderdeel", sections, default=sections[0], key="data_section",
                                    label_visibility="collapsed") or sections[0]
     with st.container(key="panel_section"):
         if section == sections[0]:
-            ptitle("Opgeslagen datasets")
-            _library()
+            ptitle("Mijn data · alleen voor jou zichtbaar")
+            _library(S.store(), editable=True, key="own")
         elif section == sections[1]:
+            ptitle("Gedeelde data · beschikbaar voor iedereen")
+            st.caption("Deze data kan iedereen gebruiken in backtests. Heb je zelf dezelfde markt en timeframe, "
+                       "dan gaat jouw eigen data voor." + (" Als beheerder kun je hier ook verwijderen." if S.is_admin() else ""))
+            _library(S.shared_store(), editable=S.is_admin(), key="shared")
+        elif section == sections[2]:
             ptitle("Bestanden uploaden")
             _upload()
-        elif section == sections[2]:
+        elif section == sections[3]:
             ptitle("Data downloaden")
             _download()
         else:

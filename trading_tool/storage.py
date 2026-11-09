@@ -3,9 +3,10 @@
 Opslag-indeling (per jaar, zodat bestanden klein blijven en alleen gewijzigde jaren
 opnieuw worden opgeslagen):
 
-    data/store/BTCUSD/M1/2024.parquet
-    data/store/XAUUSD/D1/2019.parquet
-    data/store/_results/{trades.parquet, equity.parquet, meta.json}
+    data/store/BTCUSD/M1/2024.parquet                      <- gedeelde bibliotheek (root)
+    data/store/users/<gebruiker>/XAUUSD/D1/2019.parquet    <- eigen data van een gebruiker
+    data/store/users/<gebruiker>/strategies/<id>.json      <- eigen strategieën
+    data/store/users/<gebruiker>/results/<run>/...         <- backtest-runs
 
 * Lokaal wordt altijd geschreven naar `.datastore/` (staat in .gitignore).
 * Met een GitHub-token wordt dezelfde inhoud ook in de repository (`data/store/`) gecommit,
@@ -29,7 +30,9 @@ from .github_sync import GitHubError, GitHubSync
 TF_CODE = {"1M": "MN1", "1W": "W1", "1D": "D1", "4H": "H4", "1H": "H1", "15m": "M15", "5m": "M5", "1m": "M1"}
 CODE_TF = {v: k for k, v in TF_CODE.items()}
 STORE_REL = "data/store"
-RESULTS_DIR = "_results"
+RESULTS_DIR = "results"
+RESERVED = {"users", "guests", "_results", "results", "strategies", "account"}
+BOOKKEEPING = {"deleted.json", "synced.json"}
 OHLCV = ["open", "high", "low", "close", "volume"]
 
 
@@ -50,10 +53,13 @@ class SaveReport:
 
 class DataStore:
     def __init__(self, repo_root: str | Path, local_root: str | Path | None = None,
-                 github: GitHubSync | None = None):
+                 github: GitHubSync | None = None, namespace: str | None = None):
         self.repo_root = Path(repo_root)
-        self.repo_dir = self.repo_root / STORE_REL
-        self.local_dir = Path(local_root) if local_root else self.repo_root / ".datastore"
+        self.namespace = namespace.strip("/") if namespace else None
+        self.rel_root = STORE_REL + (f"/{self.namespace}" if self.namespace else "")
+        self.repo_dir = self.repo_root / self.rel_root
+        base_local = Path(local_root) if local_root else self.repo_root / ".datastore"
+        self.local_dir = base_local / self.namespace if self.namespace else base_local
         self.github = github
         self.local_dir.mkdir(parents=True, exist_ok=True)
         self._tomb_path = self.local_dir / "deleted.json"
@@ -100,12 +106,16 @@ class DataStore:
         return self._synced_map().get(rel) == local.stat().st_mtime_ns
 
     def unsynced_files(self) -> list[str]:
-        """Lokale bestanden (data + resultaten) die nog niet op GitHub staan."""
+        """Lokale bestanden (data, strategieën, resultaten) die nog niet op GitHub staan."""
         out = []
         for p in sorted(self.local_dir.rglob("*")):
-            if not p.is_file() or p.parent == self.local_dir:   # bookkeeping-bestanden overslaan
+            if not p.is_file() or p.name in BOOKKEEPING:
                 continue
             rel = p.relative_to(self.local_dir).as_posix()
+            if self.namespace is None and rel.split("/", 1)[0] in ("users", "guests"):
+                continue   # andere namespaces hebben hun eigen administratie
+            if rel.split("/", 1)[0] == "guests":
+                continue
             if not self._is_on_github(rel):
                 out.append(rel)
         return out
@@ -123,7 +133,7 @@ class DataStore:
         def flush():
             nonlocal batch, size
             if batch:
-                self.github.commit_files({f"{STORE_REL}/{k}": v for k, v in batch.items()},
+                self.github.commit_files({f"{self.rel_root}/{k}": v for k, v in batch.items()},
                                          f"Data: {len(batch)} bestand(en) naar GitHub gezet")
                 self._mark_synced(list(batch))
                 rep.total += len(batch)
@@ -165,7 +175,7 @@ class DataStore:
             if not base.is_dir():
                 continue
             for sd in base.iterdir():
-                if not sd.is_dir() or sd.name.startswith(("_", ".")):
+                if not sd.is_dir() or sd.name.startswith(("_", ".")) or sd.name in RESERVED:
                     continue
                 for td in sd.iterdir():
                     if td.is_dir() and td.name in CODE_TF:
@@ -246,7 +256,7 @@ class DataStore:
             part = merged[merged.index.year == y]
             data = _df_to_parquet_bytes(part)
             (local_d / f"{y}.parquet").write_bytes(data)
-            payload[f"{STORE_REL}/{symbol}/{code}/{y}.parquet"] = data
+            payload[f"{self.rel_root}/{symbol}/{code}/{y}.parquet"] = data
 
         tomb = self._tombstones()
         changed = False
@@ -280,7 +290,7 @@ class DataStore:
         rep = SaveReport()
         if self.github and files:
             try:
-                self.github.commit_files({f"{STORE_REL}/{symbol}/{code}/{n}": None for n in files},
+                self.github.commit_files({f"{self.rel_root}/{symbol}/{code}/{n}": None for n in files},
                                          f"Data: {symbol} {tf} verwijderd")
                 rep.synced = True
             except Exception as e:  # noqa: BLE001
@@ -288,40 +298,121 @@ class DataStore:
         return rep
 
     # ------------------------------------------------------------------ #
-    # backtest-resultaten
+    # generieke documenten (strategieën, profiel, resultaten)
     # ------------------------------------------------------------------ #
-    def save_results(self, trades: pd.DataFrame, equity: pd.DataFrame, meta: dict) -> SaveReport:
-        d = self.local_dir / RESULTS_DIR
-        d.mkdir(parents=True, exist_ok=True)
-        files = {
-            "trades.parquet": _df_to_parquet_bytes(trades.reset_index(drop=True)),
-            "equity.parquet": _df_to_parquet_bytes(equity.reset_index(drop=True)),
-            "meta.json": json.dumps(meta, default=str, indent=1).encode(),
-        }
-        for name, data in files.items():
-            (d / name).write_bytes(data)
-        rep = SaveReport(total=len(trades))
-        if self.github:
+    def put_files(self, files: dict[str, bytes], message: str) -> SaveReport:
+        """Schrijf meerdere bestanden (pad relatief binnen deze store) lokaal + naar GitHub."""
+        tomb = self._tombstones()
+        changed = False
+        for rel, data in files.items():
+            p = self.local_dir / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
+            changed |= tomb.pop(rel, None) is not None
+        if changed:
+            self._set_tombstones(tomb)
+        rep = SaveReport(total=len(files))
+        if self.github and files:
             try:
-                self.github.commit_files({f"{STORE_REL}/{RESULTS_DIR}/{k}": v for k, v in files.items()},
-                                         "Backtest-resultaten bijgewerkt")
-                self._mark_synced([f"{RESULTS_DIR}/{k}" for k in files])
+                self.github.commit_files({f"{self.rel_root}/{k}": v for k, v in files.items()}, message)
+                self._mark_synced(list(files))
                 rep.synced = True
             except Exception as e:  # noqa: BLE001
                 rep.error = str(e)
         return rep
 
-    def load_results(self) -> tuple[pd.DataFrame, pd.DataFrame, dict] | None:
-        files = self._resolve(RESULTS_DIR)
+    def get_file(self, rel: str) -> bytes | None:
+        d, _, name = rel.rpartition("/")
+        p = self._resolve(d).get(name)
+        return p.read_bytes() if p else None
+
+    def list_files(self, rel_dir: str) -> list[str]:
+        return sorted(self._resolve(rel_dir))
+
+    def list_dirs(self, rel_dir: str) -> list[str]:
+        names = set()
+        for base in (self.repo_dir, self.local_dir):
+            d = base / rel_dir
+            if d.is_dir():
+                names |= {p.name for p in d.iterdir() if p.is_dir()}
+        # een map telt alleen als er nog (niet-verwijderde) bestanden in zitten
+        return sorted(n for n in names if self._resolve(f"{rel_dir}/{n}"))
+
+    def delete_files(self, rels: list[str], message: str) -> SaveReport:
+        tomb = self._tombstones()
+        now = time.time()
+        existing = []
+        for rel in rels:
+            lp = self.local_dir / rel
+            found = False
+            if lp.exists():
+                lp.unlink()
+                found = True
+            if (self.repo_dir / rel).exists():
+                tomb[rel] = now
+                found = True
+            if found:
+                existing.append(rel)
+        self._set_tombstones(tomb)
+        rep = SaveReport(total=len(existing))
+        if self.github and existing:
+            try:
+                self.github.commit_files({f"{self.rel_root}/{r}": None for r in existing}, message)
+                rep.synced = True
+            except Exception as e:  # noqa: BLE001
+                rep.error = str(e)
+        return rep
+
+    def put_json(self, rel: str, obj, message: str) -> SaveReport:
+        return self.put_files({rel: json.dumps(obj, default=str, indent=1).encode()}, message)
+
+    def get_json(self, rel: str):
+        raw = self.get_file(rel)
+        if raw is None:
+            return None
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return None
+
+    # ------------------------------------------------------------------ #
+    # backtest-runs
+    # ------------------------------------------------------------------ #
+    def save_run(self, run_id: str, trades: pd.DataFrame, equity: pd.DataFrame, meta: dict,
+                 keep: int = 30) -> SaveReport:
+        base = f"{RESULTS_DIR}/{run_id}"
+        files = {
+            f"{base}/trades.parquet": _df_to_parquet_bytes(trades.reset_index(drop=True)),
+            f"{base}/equity.parquet": _df_to_parquet_bytes(equity.reset_index(drop=True)),
+            f"{base}/meta.json": json.dumps(meta, default=str, indent=1).encode(),
+        }
+        rep = self.put_files(files, f"Backtest opgeslagen: {meta.get('strategy_name', run_id)}")
+        old = self.list_runs()[keep:]
+        if old:
+            self.delete_files([f"{RESULTS_DIR}/{r}/{n}" for r in old for n in
+                               ("trades.parquet", "equity.parquet", "meta.json")], "Oude backtests opgeruimd")
+        return rep
+
+    def list_runs(self) -> list[str]:
+        """Run-id's, nieuwste eerst (id begint met een tijdstempel)."""
+        return sorted(self.list_dirs(RESULTS_DIR), reverse=True)
+
+    def run_meta(self, run_id: str) -> dict | None:
+        return self.get_json(f"{RESULTS_DIR}/{run_id}/meta.json")
+
+    def load_run(self, run_id: str) -> tuple[pd.DataFrame, pd.DataFrame, dict] | None:
+        files = self._resolve(f"{RESULTS_DIR}/{run_id}")
         if not {"trades.parquet", "equity.parquet", "meta.json"} <= set(files):
             return None
         try:
-            trades = pd.read_parquet(files["trades.parquet"])
-            equity = pd.read_parquet(files["equity.parquet"])
-            meta = json.loads(files["meta.json"].read_text())
-        except Exception:  # noqa: BLE001 - kapotte/oude resultaten negeren
+            return (pd.read_parquet(files["trades.parquet"]), pd.read_parquet(files["equity.parquet"]),
+                    json.loads(files["meta.json"].read_text()))
+        except Exception:  # noqa: BLE001
             return None
-        return trades, equity, meta
+
+    def delete_run(self, run_id: str) -> SaveReport:
+        return self.delete_files([f"{RESULTS_DIR}/{run_id}/{n}" for n in ("trades.parquet", "equity.parquet",
+                                                                          "meta.json")], "Backtest verwijderd")
 
 
 def make_github_sync(token: str | None, repo: str | None, branch: str = "main") -> GitHubSync | None:

@@ -5,14 +5,19 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import streamlit as st
 
+import secrets as pysecrets
+
+from trading_tool import strategies as strat
+from trading_tool.accounts import Accounts
 from trading_tool.backtester import BacktestResult
-from trading_tool.config import StrategyConfig
+from trading_tool.config import TF_MINUTES
 from trading_tool.data_loader import MultiTimeframeData, build_multi_timeframe
+from trading_tool.github_sync import GitHubSync
 from trading_tool.live import LiveState, analyze_live
+from trading_tool.rules_engine import live_status
 from trading_tool.storage import DataStore, make_github_sync
 from trading_tool.synthetic import demo_dataset
 
@@ -95,23 +100,23 @@ def _cfg() -> tuple[str | None, str, str, str]:
 
 
 @st.cache_resource(show_spinner=False, ttl=1800)
-def _store(token: str | None, repo: str, branch: str, source: str) -> tuple[DataStore, dict]:
-    """DataStore + status van de GitHub-koppeling (token wordt eerst gecontroleerd)."""
+def _github(token: str | None, repo: str, branch: str, source: str) -> tuple[GitHubSync | None, dict]:
+    """GitHub-koppeling + status (token wordt eerst gecontroleerd)."""
     gh = make_github_sync(token, repo, branch)
     status = {"configured": gh is not None, "ok": False, "msg": "Geen token ingesteld.", "source": source,
               "repo": repo}
     if gh is not None:
         ok, msg = gh.check()
         status.update(ok=ok, msg=msg)
-    return DataStore(ROOT, github=gh if status["ok"] else None), status
+    return (gh if status["ok"] else None), status
 
 
-def store() -> DataStore:
-    return _store(*_cfg())[0]
+def github() -> GitHubSync | None:
+    return _github(*_cfg())[0]
 
 
 def github_status() -> dict:
-    st_ = dict(_store(*_cfg())[1])
+    st_ = dict(_github(*_cfg())[1])
     st_["secrets_error"] = _read_secrets()[1]
     return st_
 
@@ -126,57 +131,220 @@ def test_token(token: str, repo: str | None = None) -> tuple[bool, str]:
 def use_token_now(token: str, repo: str | None = None) -> None:
     runtime_cfg()["token"] = clean_token(token)
     runtime_cfg()["repo"] = clean_repo(repo)
-    _store.clear()
+    _github.clear()
 
 
 def reset_github() -> None:
-    _store.clear()
+    _github.clear()
 
 
+# --------------------------------------------------------------------------- #
+# Gebruikers
+# --------------------------------------------------------------------------- #
+@st.cache_resource(show_spinner=False)
+def _accounts(cfg_key: tuple) -> Accounts:
+    return Accounts(ROOT, github=_github(*cfg_key)[0])   # één object: onthoudt mislukte inlogpogingen
+
+
+def accounts() -> Accounts:
+    return _accounts(_cfg())
+
+
+def user() -> str | None:
+    return st.session_state.get("user")
+
+
+def is_guest() -> bool:
+    return bool(st.session_state.get("guest"))
+
+
+def logged_in() -> bool:
+    return user() is not None or is_guest()
+
+
+def display_name() -> str:
+    return "Gast" if is_guest() else (user() or "")
+
+
+def login_as(username: str) -> None:
+    _reset_session()
+    st.session_state["user"] = username
+
+
+def login_guest() -> None:
+    _reset_session()
+    st.session_state["guest"] = pysecrets.token_hex(6)
+    st.session_state["demo"] = True
+
+
+def logout() -> None:
+    _reset_session()
+
+
+def _reset_session() -> None:
+    for k in list(st.session_state.keys()):
+        if k != "_flash":
+            del st.session_state[k]
+
+
+def admins() -> set[str]:
+    raw = secret("ADMIN_USERS", "") or ""
+    return {a.strip().lower() for a in raw.replace(";", ",").split(",") if a.strip()}
+
+
+def is_admin() -> bool:
+    return user() is not None and user() in admins()
+
+
+def signup_open() -> bool:
+    return str(secret("ALLOW_SIGNUP", "true")).strip().lower() not in ("0", "false", "nee", "no")
+
+
+def namespace() -> str:
+    if is_guest():
+        return f"guests/{st.session_state['guest']}"
+    return f"users/{user()}"
+
+
+def store() -> DataStore:
+    """De eigen (afgeschermde) opslag van de ingelogde gebruiker."""
+    if is_guest():
+        return DataStore(ROOT, namespace=namespace())         # gasten: alleen tijdelijk, nooit naar GitHub
+    return DataStore(ROOT, github=github(), namespace=namespace())
+
+
+def shared_store() -> DataStore:
+    """Gedeelde bibliotheek (alleen beheerders mogen erin schrijven)."""
+    return DataStore(ROOT, github=github())
+
+
+# --------------------------------------------------------------------------- #
+# Marktdata (eigen + gedeeld)
+# --------------------------------------------------------------------------- #
 def demo_on() -> bool:
     return bool(st.session_state.get("demo", False))
 
 
 def fingerprint() -> str:
-    return "demo" if demo_on() else store().fingerprint()
+    if demo_on():
+        return "demo"
+    return f"{namespace()}|{store().fingerprint()}|{shared_store().fingerprint()}"
 
 
 def symbols() -> list[str]:
     if demo_on():
         return SYMBOLS
-    found = store().symbols()
-    return [s for s in SYMBOLS if s in found] + [s for s in found if s not in SYMBOLS]
+    found = set(store().symbols()) | set(shared_store().symbols())
+    return [s for s in SYMBOLS if s in found] + sorted(s for s in found if s not in SYMBOLS)
 
 
-@st.cache_resource(show_spinner=False, max_entries=6)
-def _mtf(symbol: str, fp: str) -> MultiTimeframeData | None:
+def data_origin(symbol: str) -> dict[str, str]:
+    """{tf: 'eigen' | 'gedeeld'} - welke bron gebruikt wordt per timeframe."""
+    own, shared = set(store().timeframes(symbol)), set(shared_store().timeframes(symbol))
+    return {tf: ("eigen" if tf in own else "gedeeld") for tf in sorted(own | shared, key=lambda t: -TF_MINUTES[t])}
+
+
+@st.cache_resource(show_spinner=False, max_entries=8)
+def _mtf(ns: str, symbol: str, fp: str) -> MultiTimeframeData | None:
     if fp == "demo":
         return demo_dataset(symbol, seed=SYMBOLS.index(symbol) if symbol in SYMBOLS else 0)
-    src = store().load_symbol(symbol)
+    src = shared_store().load_symbol(symbol)
+    src.update(DataStore(ROOT, namespace=ns).load_symbol(symbol))   # eigen data gaat voor
     return build_multi_timeframe(symbol, src) if src else None
 
 
 def mtf(symbol: str) -> MultiTimeframeData | None:
-    return _mtf(symbol, fingerprint())
+    return _mtf(namespace(), symbol, fingerprint())
 
 
-@st.cache_resource(show_spinner=False, max_entries=8)
-def _live(symbol: str, fp: str) -> LiveState | None:
-    m = _mtf(symbol, fp)
+# --------------------------------------------------------------------------- #
+# Strategieën
+# --------------------------------------------------------------------------- #
+def list_strategies() -> list[dict]:
+    st_ = store()
+    out = []
+    for name in st_.list_files("strategies"):
+        s = st_.get_json(f"strategies/{name}")
+        if isinstance(s, dict) and s.get("id"):
+            out.append(strat.normalize(s))
+    return sorted(out, key=lambda s: s.get("updated", ""), reverse=True)
+
+
+def get_strategy(sid: str) -> dict | None:
+    s = store().get_json(f"strategies/{sid}.json")
+    return strat.normalize(s) if isinstance(s, dict) else None
+
+
+def save_strategy(s: dict):
+    s = dict(s, updated=strat.now_iso(), owner=display_name())
+    rep = store().put_json(f"strategies/{s['id']}.json", s, f"Strategie opgeslagen: {s['name']}")
+    _public.clear()
+    return rep
+
+
+def delete_strategy(sid: str):
+    rep = store().delete_files([f"strategies/{sid}.json"], "Strategie verwijderd")
+    _public.clear()
+    return rep
+
+
+@st.cache_data(show_spinner=False, ttl=120)
+def _public(_marker: int = 0) -> list[dict]:
+    acc = accounts()
+    out = []
+    for u in acc.list_users():
+        stx = acc.store_for(u)
+        for name in stx.list_files("strategies"):
+            s = stx.get_json(f"strategies/{name}")
+            if isinstance(s, dict) and s.get("public"):
+                s = strat.normalize(s)
+                s["owner"] = u
+                out.append(s)
+    return sorted(out, key=lambda s: s.get("updated", ""), reverse=True)
+
+
+def public_strategies() -> list[dict]:
+    return _public()
+
+
+# --------------------------------------------------------------------------- #
+# Live status (dashboard)
+# --------------------------------------------------------------------------- #
+@st.cache_resource(show_spinner=False, max_entries=12)
+def _live_smc(ns: str, symbol: str, fp: str, key: str, params_json: str) -> LiveState | None:
+    import json
+    m = _mtf(ns, symbol, fp)
     if m is None:
         return None
     try:
-        return analyze_live(m, StrategyConfig())
+        return analyze_live(m, strat.smc_config(json.loads(params_json)))
     except Exception:  # noqa: BLE001
         return None
 
 
-def live(symbol: str) -> LiveState | None:
-    return _live(symbol, fingerprint())
+@st.cache_resource(show_spinner=False, max_entries=12)
+def _live_rules(ns: str, symbol: str, fp: str, key: str, params_json: str) -> dict | None:
+    import json
+    m = _mtf(ns, symbol, fp)
+    if m is None:
+        return None
+    try:
+        return live_status(m, json.loads(params_json))
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)}
+
+
+def live(symbol: str, strategy: dict):
+    import json
+    pj = json.dumps(strategy["params"], sort_keys=True, default=str)
+    key = f"{strategy.get('id')}|{strategy.get('updated')}"
+    if strategy["type"] == "smc":
+        return _live_smc(namespace(), symbol, fingerprint(), key, pj)
+    return _live_rules(namespace(), symbol, fingerprint(), key, pj)
 
 
 # --------------------------------------------------------------------------- #
-# Resultaten
+# Resultaten (meerdere runs per gebruiker)
 # --------------------------------------------------------------------------- #
 @dataclass
 class Results:
@@ -189,6 +357,10 @@ class Results:
     @property
     def symbols(self) -> list[str]:
         return list(self.equity)
+
+    @property
+    def is_smc(self) -> bool:
+        return self.meta.get("strategy_type", "smc") == "smc"
 
     def views(self) -> list[str]:
         return self.symbols + (["TOTAAL"] if len(self.symbols) > 1 else [])
@@ -219,35 +391,68 @@ def results_from_backtests(res: list[BacktestResult], meta: dict) -> Results:
                    {r.symbol: r.stats for r in res}, meta)
 
 
-def persist_results(r: Results):
+def save_run(r: Results):
     eq = pd.concat([pd.DataFrame({"symbol": s, "time": e.index, "equity": e.values}) for s, e in r.equity.items()],
                    ignore_index=True)
     meta = dict(r.meta, initial=r.initial, stats=r.stats)
-    if demo_on() or r.meta.get("demo"):
-        return None  # demo-resultaten niet opslaan
-    return store().save_results(r.trades, eq, meta)
+    run_id = pd.Timestamp.now(tz="UTC").strftime("%Y%m%d-%H%M%S") + "-" + pysecrets.token_hex(2)
+    r.meta["run_id"] = run_id
+    rep = store().save_run(run_id, r.trades, eq, meta)
+    st.session_state["run_id"] = run_id
+    st.session_state["results"] = r
+    return rep
+
+
+def list_runs() -> list[tuple[str, dict]]:
+    st_ = store()
+    return [(rid, st_.run_meta(rid) or {}) for rid in st_.list_runs()]
+
+
+def _load_run(run_id: str) -> Results | None:
+    loaded = store().load_run(run_id)
+    if not loaded:
+        return None
+    trades, eq, meta = loaded
+    equity = {s: pd.Series(g["equity"].to_numpy(), index=pd.DatetimeIndex(g["time"]), name=s)
+              for s, g in eq.groupby("symbol", sort=False)}
+    if not equity:
+        return None
+    meta["run_id"] = run_id
+    return Results(trades, equity, {k: float(v) for k, v in meta.get("initial", {}).items()},
+                   meta.get("stats", {}), meta)
+
+
+def select_run(run_id: str) -> None:
+    st.session_state["run_id"] = run_id
+    st.session_state.pop("results", None)
 
 
 def get_results() -> Results | None:
-    if "results" in st.session_state:
+    if st.session_state.get("results") is not None:
         return st.session_state["results"]
-    loaded = store().load_results()
-    res = None
-    if loaded:
-        trades, eq, meta = loaded
-        equity = {s: pd.Series(g["equity"].to_numpy(), index=pd.DatetimeIndex(g["time"]), name=s)
-                  for s, g in eq.groupby("symbol", sort=False)}
-        if equity:
-            res = Results(trades, equity, {k: float(v) for k, v in meta.get("initial", {}).items()},
-                          meta.get("stats", {}), meta)
+    rid = st.session_state.get("run_id")
+    runs = store().list_runs()
+    if not runs:
+        return None
+    if rid not in runs:
+        rid = runs[0]
+    res = _load_run(rid)
+    st.session_state["run_id"] = rid
     st.session_state["results"] = res
     return res
 
 
-def set_results(r: Results | None) -> None:
-    st.session_state["results"] = r
+def delete_run(run_id: str):
+    rep = store().delete_run(run_id)
+    if st.session_state.get("run_id") == run_id:
+        st.session_state.pop("run_id", None)
+        st.session_state.pop("results", None)
+    return rep
 
 
+# --------------------------------------------------------------------------- #
+# Kleine helpers
+# --------------------------------------------------------------------------- #
 def flash(msg: str, kind: str = "success") -> None:
     st.session_state.setdefault("_flash", []).append((kind, msg))
 
@@ -271,5 +476,10 @@ def fmt_bias(v) -> tuple[str, str]:
     return {1: ("▲ Bull", "bull"), -1: ("▼ Bear", "bear"), 0: ("● 50/50", "")}[int(v)]
 
 
-def np_float(x) -> float:
-    return float(np.asarray(x).item()) if np.ndim(x) == 0 else float(x)
+def strategy_choices() -> list[dict]:
+    """Eigen strategieën; heeft iemand er nog geen, dan de sjablonen als startpunt."""
+    own = list_strategies()
+    if own:
+        return own
+    return [strat.normalize(dict(strat.from_template(k, display_name()), id=f"tpl-{k}"))
+            for k in strat.TEMPLATES if k != "blank"]

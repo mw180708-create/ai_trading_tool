@@ -11,8 +11,7 @@ import numpy as np
 import pandas as pd
 
 from .bias import compute_confluence
-from .config import (BIAS_COMBOS, CONFIRMATION_TF, POI_TIMEFRAMES, SCALP_POI_TIMEFRAMES, TF_MINUTES,
-                     StrategyConfig)
+from .config import TF_MINUTES, TIMEFRAMES, StrategyConfig
 from .data_loader import MultiTimeframeData, to_numpy_ns
 from .market_structure import analyze_timeframe
 
@@ -55,7 +54,8 @@ def analyze_live(mtf: MultiTimeframeData, cfg: StrategyConfig | None = None) -> 
     price = float(base["close"].iloc[-1])
 
     analyses = {}
-    for tf in sorted({*BIAS_TFS, *[CONFIRMATION_TF[t] for t in POI_TIMEFRAMES]}, key=lambda t: -TF_MINUTES[t]):
+    poi_tfs = [t for t in TIMEFRAMES if t in cfg.poi_timeframes and t in cfg.confirmation_tf]
+    for tf in sorted({*BIAS_TFS, *[cfg.confirmation_tf[t] for t in poi_tfs]}, key=lambda t: -TF_MINUTES[t]):
         if tf in mtf:
             df = mtf[tf]
             # alleen gesloten bars meenemen
@@ -75,10 +75,10 @@ def analyze_live(mtf: MultiTimeframeData, cfg: StrategyConfig | None = None) -> 
         rows.append({"tf": tf, "liquidity": liq, "structure": st, "bias": b, "available": True})
         bias_now[tf] = np.array([b], np.int8)
 
-    conf = compute_confluence(bias_now, 1)
+    conf = compute_confluence(bias_now, 1, cfg.bias_combos)
     combos = []
-    for combo, kind in BIAS_COMBOS:
-        vals = [int(bias_now[t][0]) for t in combo]
+    for combo, kind in cfg.bias_combos:
+        vals = [int(bias_now[t][0]) if t in bias_now else 0 for t in combo]
         match = vals[0] != 0 and all(v == vals[0] for v in vals)
         combos.append({"combo": "+".join(combo), "kind": kind, "match": match, "direction": vals[0] if match else 0})
 
@@ -101,12 +101,12 @@ def analyze_live(mtf: MultiTimeframeData, cfg: StrategyConfig | None = None) -> 
     t_ns = to_numpy_ns(base["close_time"])
     suf_min = np.minimum.accumulate(closes[::-1])[::-1]
     suf_max = np.maximum.accumulate(closes[::-1])[::-1]
-    allowed = [t for t in POI_TIMEFRAMES if not scalp_only or t in SCALP_POI_TIMEFRAMES]
-    for tf in POI_TIMEFRAMES:
+    allowed = [t for t in poi_tfs if not scalp_only or t in cfg.scalp_poi_timeframes]
+    for tf in poi_tfs:
         an = analyses.get(tf)
         if an is None:
             continue
-        ctf = CONFIRMATION_TF[tf] if CONFIRMATION_TF[tf] in mtf else mtf.base_tf
+        ctf = cfg.confirmation_tf[tf] if cfg.confirmation_tf[tf] in mtf else mtf.base_tf
         window_ns = cfg.arm_timeout_bars * TF_MINUTES[ctf] * 60 * 10**9
         for p in an.pois[-cfg.max_pois_per_tf:]:
             i0 = int(np.searchsorted(t_ns, p.created_ns, side="right"))

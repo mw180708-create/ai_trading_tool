@@ -51,7 +51,7 @@ div[class*="st-key-panelglow"]{border-color:rgba(59,158,255,.35) !important;
 .kpi{padding:2px 0;}
 .kpi-label{font-size:.72rem; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
 .kpi-value{font-family:'Space Grotesk'; font-size:1.75rem; font-weight:600; line-height:1.25; margin-top:2px; white-space:nowrap;}
-.kpi-value.sm{font-size:1.3rem;}
+.kpi-value.sm{font-size:1.2rem; white-space:normal; overflow-wrap:anywhere;}
 .kpi-sub{font-size:.85rem; color:var(--muted); margin-top:2px;}
 .up{color:var(--up) !important;} .down{color:var(--down) !important;} .muted{color:var(--muted) !important;}
 .kv{display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dashed rgba(139,149,167,.15); font-size:.92rem;}
@@ -147,4 +147,4 @@ def html_block(s: str) -> None:
 def brand() -> None:
     html_block('<div class="brand"><div class="brand-logo">AI</div><div>'
                '<div class="brand-name">AI <span>Trading</span> Tool</div>'
-               '<div class="brand-sub">Trading Plan 2026-2028 · BTCUSD & XAUUSD</div></div></div>')
+               '<div class="brand-sub">Backtest-platform · jouw strategie · jouw data</div></div></div>')

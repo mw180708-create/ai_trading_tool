@@ -16,8 +16,7 @@ import numpy as np
 import pandas as pd
 
 from .bias import compute_confluence
-from .config import (BIAS_COMBOS, CONFIRMATION_TF, POI_TIMEFRAMES, SCALP_POI_TIMEFRAMES,
-                     SWING_POI_TIMEFRAMES, TF_MINUTES, TIMEFRAMES, CostConfig, RiskConfig,
+from .config import (TF_MINUTES, TIMEFRAMES, CostConfig, RiskConfig,
                      StrategyConfig)
 from .data_loader import MultiTimeframeData, to_numpy_ns
 from .market_structure import POI, TFAnalysis, analyze_timeframe
@@ -110,10 +109,10 @@ class Backtester:
             self.closed_now[tf] = cn
             bias_at[tf] = np.where(idx >= 0, an.bias[np.clip(idx, 0, None)], 0).astype(np.int8)
         self.bias_at = bias_at
-        self.conf = compute_confluence(bias_at, N)
+        self.conf = compute_confluence(bias_at, N, self.cfg.bias_combos)
 
-        self.conf_tf = {p: self._effective_tf(c) for p, c in CONFIRMATION_TF.items()}
-        for p, c in CONFIRMATION_TF.items():
+        self.conf_tf = {p: self._effective_tf(c) for p, c in self.cfg.confirmation_tf.items()}
+        for p, c in self.cfg.confirmation_tf.items():
             if p in self.data and self.conf_tf[p] != c:
                 self._log(f"  [let op] {self.symbol}: geen {c} data -> {p} POI confirmatie op {self.conf_tf[p]}")
 
@@ -187,7 +186,8 @@ class Backtester:
         closed: list[dict] = []
         pos: Position | None = None
 
-        poi_tfs = [tf for tf in POI_TIMEFRAMES if tf in self.analysis]
+        poi_tfs = [tf for tf in TIMEFRAMES if tf in cfg.poi_timeframes and tf in self.analysis
+                   and tf in self.conf_tf]
         active: dict[str, list[POI]] = {tf: [] for tf in poi_tfs}
         ptr = {tf: 0 for tf in poi_tfs}
         standard_dir = self.conf["standard_dir"]
@@ -287,10 +287,10 @@ class Backtester:
             if standard_dir[i] != 0:
                 direction, allowed, scalp = int(standard_dir[i]), poi_tfs, False
             elif scalp_dir[i] != 0:
-                direction, allowed, scalp = int(scalp_dir[i]), [t for t in poi_tfs if t in SCALP_POI_TIMEFRAMES], True
+                direction, allowed, scalp = int(scalp_dir[i]), [t for t in poi_tfs if t in cfg.scalp_poi_timeframes], True
             else:
                 continue  # Geen Match / 50/50 -> geen trade
-            combo_name = "+".join(BIAS_COMBOS[int(combo_id[i]) - 1][0])
+            combo_name = "+".join(cfg.bias_combos[int(combo_id[i]) - 1][0])
 
             # ---------- 4. POI-in-POI confirmation (Stap 3) ----------
             done = False
@@ -322,7 +322,7 @@ class Backtester:
                     if rr < req:
                         self.counters["skip_rr"] += 1
                         continue
-                    swing = tf in SWING_POI_TIMEFRAMES
+                    swing = tf in cfg.swing_poi_timeframes
                     ttype = "Swing" if swing else ("Scalp" if scalp else "Intraday")
                     be_rr = cfg.be_trigger_rr_swing if swing else cfg.be_trigger_rr_intraday
                     risk_amount = equity * risk.risk_per_trade

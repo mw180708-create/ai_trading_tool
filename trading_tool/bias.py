@@ -17,7 +17,7 @@ def combo_direction(bias_at: dict[str, np.ndarray], combo: tuple[str, ...], n: i
     return np.where(ok, first, 0).astype(np.int8)
 
 
-def compute_confluence(bias_at: dict[str, np.ndarray], n: int) -> dict[str, np.ndarray]:
+def compute_confluence(bias_at: dict[str, np.ndarray], n: int, combos=None) -> dict[str, np.ndarray]:
     """Retourneert per executie-bar:
 
     standard_dir : richting als een van de combinaties 1M+1W+1D, 1W+1D+4H, 1M+1D+1H matcht
@@ -27,8 +27,8 @@ def compute_confluence(bias_at: dict[str, np.ndarray], n: int) -> dict[str, np.n
     standard = np.zeros(n, np.int8)
     scalp = np.zeros(n, np.int8)
     combo_id = np.zeros(n, np.int8)
-    for i, (combo, kind) in enumerate(BIAS_COMBOS, start=1):
-        d = combo_direction(bias_at, combo, n)
+    for i, (combo, kind) in enumerate(combos if combos is not None else BIAS_COMBOS, start=1):
+        d = combo_direction(bias_at, tuple(combo), n)
         hit = (d != 0) & (combo_id == 0)
         combo_id[hit] = i
         if kind == "scalp":

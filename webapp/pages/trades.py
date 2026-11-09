@@ -16,8 +16,8 @@ ZOOM_TFS = ["1m", "5m", "15m", "1H", "4H", "1D"]
 
 
 @st.cache_data(show_spinner=False, max_entries=12)
-def _zoom_payload(symbol: str, tf: str, fp: str, t0: str, t1: str) -> dict:
-    m = S._mtf(symbol, fp)
+def _zoom_payload(ns: str, symbol: str, tf: str, fp: str, t0: str, t1: str) -> dict:
+    m = S._mtf(ns, symbol, fp)
     df = m[tf]
     return candles_payload(df[(df.index >= pd.Timestamp(t0)) & (df.index <= pd.Timestamp(t1))], max_bars=4000)
 
@@ -32,7 +32,7 @@ def _detail(row: pd.Series, n: int) -> None:
               "1D" if "1D" in m else m.base_tf)
     pad = pd.Timedelta(minutes=TF_MINUTES[tf] * 120)
     t0, t1 = row["entry_time"] - pad, row["exit_time"] + pad / 2
-    payload = _zoom_payload(row["symbol"], tf, S.fingerprint(), str(t0), str(t1))
+    payload = _zoom_payload(S.namespace(), row["symbol"], tf, S.fingerprint(), str(t0), str(t1))
     if not payload["candles"]:
         st.caption("Geen candles gevonden rond deze trade.")
         return
@@ -41,8 +41,9 @@ def _detail(row: pd.Series, n: int) -> None:
     lines = [
         {"price": float(row["entry"]), "color": "#e6e9ef", "title": "Entry", "style": 0, "width": 2},
         {"price": float(row["stop_loss"]), "color": DOWN, "title": "SL", "style": 0, "width": 2},
-        {"price": float(row["take_profit"]), "color": UP, "title": "TP", "style": 0, "width": 2},
     ]
+    if pd.notna(row.get("take_profit")):
+        lines.append({"price": float(row["take_profit"]), "color": UP, "title": "TP", "style": 0, "width": 2})
     if "poi_top" in row and pd.notna(row.get("poi_top")):
         lines += [{"price": float(row["poi_top"]), "color": "#3b9eff", "title": f"{row['poi_tf']} POI", "style": 2},
                   {"price": float(row["poi_bottom"]), "color": "#3b9eff", "title": "", "style": 2}]
@@ -50,10 +51,16 @@ def _detail(row: pd.Series, n: int) -> None:
     tv_chart(payload, height=430, markers=markers, lines=lines, visible=vis, key=f"trade_{n}")
     cols = st.columns(4)
     rr = float(row["r_multiple"])
+    prr = row.get("planned_rr")
+    rqr = row.get("required_rr")
+    smc = row.get("confirmation_tf", "-") not in ("-", None) and pd.notna(row.get("poi_top"))
     cards = [kpi("Resultaat", f"{rr:+.2f} R", money(float(row["pnl"])), tone_of(rr), small=True),
-             kpi("Geplande RR", f"{row['planned_rr']:.2f}", f"Eis was {row['required_rr']:.2f}", small=True),
-             kpi("POI → confirmatie", f"{row['poi_tf']} → {row['confirmation_tf']}", row["trade_type"], small=True),
-             kpi("Bias-match", str(row["bias_combo"]), "BE geraakt" if row["be_moved"] else "BE niet geraakt", small=True)]
+             kpi("Geplande RR", f"{prr:.2f}" if pd.notna(prr) else "–",
+                 f"Eis was {rqr:.2f}" if pd.notna(rqr) else "geen vaste TP" if pd.isna(prr) else "", small=True),
+             kpi("POI → confirmatie" if smc else "Signaal-timeframe",
+                 f"{row['poi_tf']} → {row['confirmation_tf']}" if smc else str(row["poi_tf"]), row["trade_type"], small=True),
+             kpi("Bias-match" if smc else "Strategie", str(row["bias_combo"]),
+                 "BE geraakt" if row["be_moved"] else "BE niet geraakt", small=True)]
     for c, h in zip(cols, cards):
         with c:
             html_block(h)
@@ -63,7 +70,7 @@ def _detail(row: pd.Series, n: int) -> None:
 
 def render() -> None:
     st.markdown("## 📋 Trades")
-    if no_results():
+    if no_results("trd"):
         return
     res = S.get_results()
     t = res.trades
@@ -93,7 +100,8 @@ def render() -> None:
         event = st.dataframe(
             view[cols], hide_index=True, width="stretch", height=420, on_select="rerun", selection_mode="single-row",
             key="trade_table", column_config={
-                "symbol": "Asset", "direction": "Richting", "trade_type": "Type", "poi_tf": "POI",
+                "symbol": "Markt", "direction": "Richting", "trade_type": "Type",
+                "poi_tf": "POI" if res.is_smc else "Signaal-TF",
                 "confirmation_tf": "Confirm.",
                 "entry_time": st.column_config.DatetimeColumn("Entry", format="DD-MM-YY HH:mm"),
                 "exit_time": st.column_config.DatetimeColumn("Exit", format="DD-MM-YY HH:mm"),
