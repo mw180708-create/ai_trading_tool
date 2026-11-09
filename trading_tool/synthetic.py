@@ -31,3 +31,16 @@ def generate_ohlc(symbol: str, start: str = "2021-01-01", end: str = "2025-01-01
     low = np.minimum(open_, close) * np.exp(-wick[1])
     return pd.DataFrame({"open": open_, "high": high, "low": low, "close": close,
                          "volume": rng.integers(10, 1000, n).astype(float)}, index=idx)
+
+
+def demo_dataset(symbol: str, seed: int = 0):
+    """Kant-en-klare demo: 1D-historie 2016-2022 (warm-up) + 5m data 2023-2024 (backtest)."""
+    from .data_loader import build_multi_timeframe
+
+    daily = generate_ohlc(symbol, "2016-01-01", "2023-01-01", "1h", seed=11 + seed).resample("1D").agg(
+        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
+    base = generate_ohlc(symbol, "2023-01-01", "2025-01-01", "5min", seed=21 + seed)
+    base *= daily["close"].iloc[-1] / base["open"].iloc[0]
+    mtf = build_multi_timeframe(symbol, {"1D": daily, "5m": base})
+    mtf.backtest_start = pd.Timestamp("2023-03-01", tz="UTC")
+    return mtf

@@ -208,6 +208,8 @@ class Backtester:
                 "poi_tf": p.poi.tf,
                 "confirmation_tf": p.conf_tf,
                 "bias_combo": p.combo,
+                "poi_top": p.poi.top,
+                "poi_bottom": p.poi.bottom,
                 "entry_time": self.times[p.entry_i],
                 "entry": p.entry,
                 "stop_loss": p.sl_initial,

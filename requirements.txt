@@ -1,12 +1,11 @@
-# Verplicht
+# Verplicht (ook gebruikt door de website op Streamlit Cloud)
 pandas>=2.0
 numpy>=1.24
 matplotlib>=3.7
+streamlit>=1.45
+plotly>=5.20
 
-# Optioneel - data downloaden
-ccxt>=4.0          # BTC 1m/1h/1d historie via Binance/Bybit/Kraken
-yfinance>=0.2      # Goud (GC=F) daily / hourly historie
-# MetaTrader5      # Alleen Windows: directe export uit je MT5 terminal (pip install MetaTrader5)
-
-# Tests
-pytest>=7
+# Optioneel - data downloaden (lokaal): pip install ccxt yfinance
+# ccxt>=4.0          # BTC 1m/1h/1d historie via Binance/Bybit/Kraken
+# yfinance>=0.2      # Goud (GC=F) daily / hourly historie
+# MetaTrader5        # Alleen Windows: directe export uit je MT5 terminal

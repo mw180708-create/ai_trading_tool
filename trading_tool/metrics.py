@@ -53,6 +53,23 @@ def _fmt(v) -> str:
     return str(v)
 
 
+COUNT_ROWS = ("Trades", "Swing", "Intraday", "Scalp")
+
+
+def format_report(report: pd.DataFrame, money_rows: tuple[str, ...] = ()) -> pd.DataFrame:
+    """Maak een leesbare tekst-tabel (hele getallen voor aantallen, $ voor bedragen)."""
+    def cell(row: str, v) -> str:
+        if pd.isna(v):
+            return "-"
+        if row in COUNT_ROWS:
+            return f"{int(v):,}"
+        if row in money_rows:
+            return f"{'-' if v < 0 else ''}${abs(v):,.0f}"
+        return _fmt(float(v)) if isinstance(v, (float, np.floating)) else _fmt(v)
+    return pd.DataFrame({col: [cell(r, v) for r, v in report[col].items()] for col in report.columns},
+                        index=report.index)
+
+
 def combined_equity(results: list[BacktestResult]) -> pd.Series:
     """Totaal = som van de afzonderlijke funded accounts."""
     if not results:
@@ -95,10 +112,7 @@ def print_report(results: list[BacktestResult]) -> pd.DataFrame:
     print(f"\n{line}\n  BACKTEST RESULTATEN - Trading Plan 2026-2028\n{line}")
     if "Trades" not in report.index or report.loc["Trades"].fillna(0).sum() == 0:
         print("  Geen trades gegenereerd.")
-    printable = report.astype(object).map(lambda v: "-" if pd.isna(v) else _fmt(v))
-    for row in ("Trades", "Swing", "Intraday", "Scalp"):
-        if row in report.index:
-            printable.loc[row] = report.loc[row].map(lambda v: "-" if pd.isna(v) else f"{int(v):,}")
+    printable = format_report(report)
     print(printable.to_string())
 
     all_trades = [r.trades for r in results if not r.trades.empty]

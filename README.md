@@ -3,6 +3,20 @@
 Python backtester die de regels uit het Trading Plan 2026-2028 strikt en emotieloos toepast op
 **BTCUSD** en **XAUUSD**: Bias (MTF confluence) → POI → POI-in-POI confirmation → Entry → BE/TP/SL.
 
+## 🌐 De website (aanbevolen)
+
+Alles via de browser: data uploaden, backtest starten, resultaten, grafieken en trades bekijken.
+
+**Online zetten (gratis, eenmalig ±5 minuten) – via Streamlit Community Cloud:**
+1. Ga naar https://share.streamlit.io en log in met **Continue with GitHub**.
+2. Klik **Create app** → **Deploy a public app from GitHub** (werkt ook met een private repo).
+3. Vul in: Repository `mw180708-create/ai_trading_tool`, Branch `main`, Main file path `app.py`.
+4. Klik **Deploy**. Na een paar minuten krijg je een eigen link (bv. `https://jouwnaam-ai-trading-tool.streamlit.app`).
+
+Elke wijziging die op GitHub komt (code of CSV's in `data/`) wordt automatisch op de website gezet.
+
+**Lokaal op je eigen pc:** dubbelklik `START_WEBSITE.bat` (Windows) of `streamlit run app.py`.
+
 ## Installatie
 
 ```bash

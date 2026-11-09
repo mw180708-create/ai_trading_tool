@@ -24,9 +24,9 @@ import pandas as pd
 
 from trading_tool.backtester import Backtester
 from trading_tool.config import DEFAULT_COSTS, CostConfig, RiskConfig, StrategyConfig
-from trading_tool.data_loader import build_multi_timeframe, discover_files, load_symbol
+from trading_tool.data_loader import discover_files, load_symbol
 from trading_tool.metrics import print_report, save_outputs
-from trading_tool.synthetic import generate_ohlc
+from trading_tool.synthetic import demo_dataset
 
 SYMBOLS = ["BTCUSD", "XAUUSD"]
 
@@ -65,13 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.demo:
         print("DEMO-modus: synthetische data (resultaten zeggen NIETS over de echte markt)\n")
         for i, sym in enumerate(wanted):
-            daily = generate_ohlc(sym, "2016-01-01", "2023-01-01", "1h", seed=11 + i).resample("1D").agg(
-                {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna()
-            base = generate_ohlc(sym, "2023-01-01", "2025-01-01", "5min", seed=21 + i)
-            base *= daily["close"].iloc[-1] / base["open"].iloc[0]
-            mtf = build_multi_timeframe(sym, {"1D": daily, "5m": base})
-            mtf.backtest_start = pd.Timestamp("2023-03-01", tz="UTC")
-            datasets.append(mtf)
+            datasets.append(demo_dataset(sym, seed=i))
     else:
         specs = dict(parse_asset(a) for a in args.asset)
         if not specs:

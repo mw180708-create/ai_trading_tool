@@ -9,6 +9,7 @@ Ondersteunde formaten (automatisch herkend):
 """
 from __future__ import annotations
 
+import io
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,23 +35,31 @@ def _parse_time_column(s: pd.Series) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(pd.to_datetime(txt, utc=True, format="mixed", dayfirst=False))
 
 
-def read_ohlc_csv(path: str | Path) -> pd.DataFrame:
-    """Lees een OHLC CSV en geef DataFrame [open, high, low, close, volume] met UTC index."""
-    path = Path(path)
-    with open(path, "r", encoding="utf-8-sig") as fh:
-        first = fh.readline()
+def read_ohlc_csv(path) -> pd.DataFrame:
+    """Lees een OHLC CSV (pad, bytes of bestand-object, bv. een website-upload)
+    en geef DataFrame [open, high, low, close, volume] met UTC index."""
+    if isinstance(path, (str, Path)):
+        text = Path(path).read_text(encoding="utf-8-sig")
+        name = str(path)
+    else:
+        data = path.read() if hasattr(path, "read") else path
+        text = data.decode("utf-8-sig") if isinstance(data, bytes) else str(data)
+        name = getattr(path, "name", "upload")
+    first = text.split("\n", 1)[0]
 
     has_header = bool(re.search(r"[A-Za-z]", first.replace("<", "").split(",")[0].split("\t")[0]))
     sep = "\t" if "\t" in first else ("," if "," in first else ";" if ";" in first else r"\s+")
+    engine = "c" if len(sep) == 1 else "python"
 
     if not has_header:  # MT4 history export
-        raw = pd.read_csv(path, sep=sep, header=None, engine="python")
+        raw = pd.read_csv(io.StringIO(text), sep=sep, header=None, engine=engine)
         cols = ["date", "time", "open", "high", "low", "close", "volume"][: raw.shape[1]]
         raw = raw.iloc[:, : len(cols)]
         raw.columns = cols
     else:
-        raw = pd.read_csv(path, sep=sep, engine="python")
-        raw.columns = [c.strip().strip("<>").strip().lower() for c in raw.columns]
+        raw = pd.read_csv(io.StringIO(text), sep=sep, engine=engine)
+        raw.columns = [str(c).strip().strip("<>").strip().lower() for c in raw.columns]
+    path = name
 
     cols = set(raw.columns)
     if {"date", "time"} <= cols:
