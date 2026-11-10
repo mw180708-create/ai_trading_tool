@@ -11,7 +11,7 @@ from trading_tool.metrics import compute_metrics
 from .. import nav
 from .. import state as S
 from ..charts import PLOTLY_CONFIG, candles_payload, sparkline, style, trade_markers, tv_chart
-from ..theme import DOWN, UP, esc, html_block, kpi, money, price_fmt, ptitle, series_color, tone_of
+from ..theme import DOWN, UP, esc, html_block, kpi, kpi_strip, money, price_fmt, ptitle, series_color, tone_of
 
 CHART_TFS = ["1m", "5m", "15m", "1H", "4H", "1D", "1W"]
 
@@ -68,7 +68,6 @@ def chart_panel(symbol: str, strategy: dict) -> None:
                 lines += [{"price": p.top, "color": col, "title": f"{p.tf} POI", "style": 2},
                           {"price": p.bottom, "color": col, "title": "", "style": 2}]
         tv_chart(payload, height=460, markers=markers, lines=lines, key=f"dash_{symbol}_{tf}")
-        st.caption("Pijlen = entries, rondjes = exits van je laatste backtest. Scroll om te zoomen.")
 
 
 def _status(title: str, tone: str, detail: str, foot: str) -> None:
@@ -142,26 +141,21 @@ def _smc_side(symbol: str, strategy: dict) -> None:
 
 
 def _kpis(res: S.Results | None, symbol: str) -> None:
-    with st.container(key="panel_kpis"):
-        if not res or symbol not in res.symbols:
-            c1, c2 = st.columns([4, 1])
-            c1.markdown('<div class="small-note" style="padding-top:8px">Nog geen backtest voor deze markt.</div>',
-                        unsafe_allow_html=True)
+    if not res or symbol not in res.symbols:
+        with st.container(key="panel_kpis"):
+            c1, c2 = st.columns([5, 1], vertical_alignment="center")
+            c1.markdown('<span class="muted">Nog geen backtest voor deze markt.</span>', unsafe_allow_html=True)
             if c2.button("Backtest starten", width="stretch", key="dash_bt"):
                 nav.go("backtest")
-            return
-        m = compute_metrics(res.trades_for(symbol), res.equity[symbol], res.initial[symbol])
-        eq = res.equity[symbol]
-        cols = st.columns(5)
-        pf = m.get("Profit Factor", 0)
-        cards = [kpi("Balans", money(float(eq.iloc[-1])), f"{m.get('Net Profit %', 0):+.2f}%", tone_of(m.get("Net Profit", 0))),
-                 kpi("Trades", f"{m.get('Trades', 0)}", res.meta.get("strategy_name", "")),
-                 kpi("Winrate", f"{m.get('Winrate %', 0):.1f}%"),
-                 kpi("Profit factor", "∞" if np.isinf(pf) else f"{pf:.2f}", tone=tone_of(pf - 1)),
-                 kpi("Max drawdown", f"{m.get('Max DD %', 0):.1f}%")]
-        for c, h in zip(cols, cards):
-            with c:
-                html_block(h)
+        return
+    m = compute_metrics(res.trades_for(symbol), res.equity[symbol], res.initial[symbol])
+    eq = res.equity[symbol]
+    pf = m.get("Profit Factor", 0)
+    kpi_strip([kpi("Balans", money(float(eq.iloc[-1])), f"{m.get('Net Profit %', 0):+.2f}%", tone_of(m.get("Net Profit", 0))),
+               kpi("Trades", f"{m.get('Trades', 0)}", f"{m.get('Avg R/trade', 0):+.2f} R per trade"),
+               kpi("Winrate", f"{m.get('Winrate %', 0):.1f}%"),
+               kpi("Profit factor", "∞" if np.isinf(pf) else f"{pf:.2f}"),
+               kpi("Max drawdown", f"{m.get('Max DD %', 0):.1f}%")])
 
 
 def _bottom(res: S.Results | None, syms: list[str]) -> None:
@@ -218,10 +212,9 @@ def render() -> None:
     with bar[2]:
         notes = []
         if S.demo_on():
-            notes.append("demo-data")
-        notes.append("opslag blijvend" if S.store().synced else "opslag tijdelijk")
+            notes.append("voorbeelddata")
         if res and res.meta.get("run_at"):
-            notes.append(f"backtest {str(res.meta['run_at'])[:16]}")
+            notes.append(f"laatste backtest {str(res.meta['run_at'])[:16]}")
         st.markdown(f'<div class="small-note" style="text-align:right;padding-top:9px">{" · ".join(notes)}</div>',
                     unsafe_allow_html=True)
 
@@ -229,6 +222,7 @@ def render() -> None:
         st.warning(f"Geen data voor {symbol}.")
         return
     _kpis(res, symbol)
+    st.write("")
     main, side = st.columns([3, 1.25], gap="medium")
     with main:
         chart_panel(symbol, strategy)

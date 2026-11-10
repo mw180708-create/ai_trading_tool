@@ -73,6 +73,17 @@ class Accounts:
             p = {k: v for k, v in p.items() if k != "password"}
         return p
 
+    def fingerprint(self, username: str) -> str | None:
+        """Korte vingerafdruk van de wachtwoord-hash (voor sessies; verandert bij een nieuw wachtwoord)."""
+        u = normalize_username(username)
+        if not USERNAME_RE.match(u):
+            return None
+        rec = self.store_for(u).get_json(PROFILE)
+        try:
+            return rec["password"]["hash"][:16] if rec else None
+        except (KeyError, TypeError):
+            return None
+
     def list_users(self) -> list[str]:
         local = Path(self.local_root) if self.local_root else self.repo_root / ".datastore"
         names: set[str] = set()

@@ -9,7 +9,8 @@ Een backtest-platform waarop **iedereen** met een eigen account zijn **eigen str
 
 | Pagina | Wat je er doet |
 |---|---|
-| **Inloggen** | Account maken, inloggen of eerst als gast proberen (demo-data) |
+| **Inloggen** | Account maken, inloggen of eerst als gast proberen (voorbeelddata) |
+| **Beheer** | Blijvende opslag koppelen en gebruikersoverzicht (alleen beheerders) |
 | **Dashboard** | Grafiek (1m t/m 1W) met je trades, actuele stand van je strategie (Bias Engine of voorwaarden), performance |
 | **Strategieën** | Strategie bouwen zonder code (sjablonen of leeg), bewerken, dupliceren, delen met de community, community-strategieën kopiëren |
 | **Data** | Eigen bibliotheek · gedeelde bibliotheek · CSV's uploaden (elke markt) · crypto downloaden · demo |
@@ -30,15 +31,22 @@ alleen strategie-*regels* worden gedeeld, nooit data of resultaten. Na 5 foute i
 1. https://share.streamlit.io → **Continue with GitHub** → **Create app**.
 2. Repository `mw180708-create/ai_trading_tool`, branch `main`, main file `streamlit_app.py` → **Deploy**.
 
-**Instellingen voor de beheerder** (Streamlit → app → ⋮ → Settings → **Secrets**):
+**Blijvende opslag (accounts, data, strategieën, resultaten)**
+Streamlit Cloud wist de schijf bij elke herstart of update. wng bewaart daarom alles in een aparte **privé**
+GitHub-repository (`wng-data`) en haalt het bij het opstarten terug. Instellen gaat via de pagina **Beheer**:
+1. Klik *Token aanmaken op GitHub* (het vinkje `repo` staat al aan) en kopieer de code.
+2. Plak de code en klik *Koppelen*: wng maakt de privé repository aan en slaat alles op wat er al is.
+3. Zet in Streamlit → app → ⋮ → Settings → **Secrets**:
 ```toml
-GITHUB_TOKEN = "ghp_..."                         # blijvende opslag van accounts, data en resultaten
-GITHUB_REPO = "mw180708-create/ai_trading_tool"
-ADMIN_USERS = "jouw-gebruikersnaam"              # mag gedeelde data beheren en GitHub koppelen
-ALLOW_SIGNUP = "true"                            # "false" = geen nieuwe accounts
+GITHUB_TOKEN = "ghp_..."
+ADMIN_USERS = "jouw-gebruikersnaam"      # beheerders (komma-gescheiden)
+# ALLOW_SIGNUP = "false"                 # nieuwe accounts uitzetten
+# GITHUB_REPO = "eigenaar/naam"          # optioneel: andere (privé) opslag-repository
 ```
-Zet de repository op **privé**: daar staan alle accounts, data en strategieën. Zonder token bewaart de online website
-alles alleen tot een herstart. Lokaal (`streamlit run app.py` of `START_WEBSITE.bat`) blijft alles bewaard in `.datastore/`.
+wng weigert gebruikersgegevens in een openbare repository op te slaan.
+
+**Ingelogd blijven**: na het inloggen zet wng een ondertekende sessiecookie (30 dagen). Na een wachtwoordwijziging
+of uitloggen is die ongeldig. Lokaal (`streamlit run app.py` of `START_WEBSITE.bat`) blijft alles bewaard in `.datastore/`.
 
 **Grenzen van deze versie** (voor een groot publiek platform nodig): een echte database + bestandsopslag i.p.v. GitHub,
 krachtigere hosting (Streamlit Community Cloud heeft ±1 GB geheugen), e-mailverificatie en "wachtwoord vergeten",

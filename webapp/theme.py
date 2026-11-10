@@ -33,7 +33,7 @@ CSS = """
   --text:#ececee; --muted:#8b8b94; --subtle:#5f5f69; --accent:#5b7cfa; --up:#26a69a; --down:#ef5350;
 }
 .stApp{background:var(--bg);}
-.block-container{padding-top:4.6rem; padding-bottom:4rem; max-width:1440px;}
+.block-container{padding-top:4.2rem; padding-bottom:2rem; max-width:1400px;}
 header[data-testid="stHeader"]{background:rgba(11,11,12,.92); backdrop-filter:blur(8px); border-bottom:1px solid var(--line);}
 h1,h2,h3,h4{letter-spacing:-.01em;}
 p, li{line-height:1.55;}
@@ -58,7 +58,34 @@ div[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]){bord
 [data-testid^="stAlertContent"], [data-testid^="stAlertContent"] p, [data-testid^="stAlertContent"] strong{color:var(--text) !important;}
 [data-testid^="stAlertContent"] svg, div[data-testid="stAlertContainer"] [data-testid="stAlertDynamicIcon"]{display:none;}
 
-.page-title{font-size:1.45rem; font-weight:600; letter-spacing:-.015em; margin:2px 0 0 0;}
+/* kop, account, melding, voettekst */
+.page-title{font-size:1.3rem; font-weight:600; letter-spacing:-.015em; margin:0;}
+div[class*="st-key-acct"]{display:flex; justify-content:flex-end; padding-top:4px;}
+div[class*="st-key-acct"] button{border-color:transparent !important; background:transparent !important; color:var(--muted) !important;}
+div[class*="st-key-acct"] button:hover{color:var(--text) !important;}
+.notice{font-size:.85rem; color:#d6c08a; padding:8px 12px; border:1px solid rgba(200,162,74,.3); border-radius:6px;
+  background:rgba(200,162,74,.06);}
+.footer{margin-top:56px; padding-top:16px; border-top:1px solid var(--line); color:var(--subtle); font-size:.76rem;
+  display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;}
+.footer a{color:var(--subtle); text-decoration:underline; text-underline-offset:2px;}
+div[class*="st-key-cookie_sink"]{display:none;}
+
+/* inloggen */
+.auth-title{font-size:1.5rem; font-weight:600; letter-spacing:-.02em; margin-top:7vh;}
+.auth-sub{color:var(--muted); font-size:.92rem; margin:6px 0 22px 0;}
+.auth-divider{display:flex; align-items:center; gap:12px; color:var(--subtle); font-size:.78rem; margin:8px 0 12px 0;}
+.auth-divider:before, .auth-divider:after{content:""; flex:1; height:1px; background:var(--line);}
+
+/* kerncijfers in één strook */
+.kpis{display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); border:1px solid var(--line);
+  border-radius:8px; background:var(--surface);}
+.kpis > div{padding:14px 18px; border-left:1px solid var(--line);}
+.kpis > div:first-child{border-left:none;}
+
+/* tabbladen */
+.stTabs [data-baseweb="tab-list"]{gap:22px; border-bottom:1px solid var(--line);}
+.stTabs [data-baseweb="tab"]{padding:8px 0; font-weight:500;}
+
 .page-sub{color:var(--muted); font-size:.9rem; margin-top:2px;}
 .ptitle{font-size:.8rem; font-weight:500; color:var(--muted); margin:0 0 10px 0;}
 
@@ -125,6 +152,16 @@ def esc(x) -> str:
 
 def ptitle(text: str) -> None:
     st.markdown(f'<div class="ptitle">{esc(text)}</div>', unsafe_allow_html=True)
+
+
+def kpi_strip(cards: list[str]) -> None:
+    st.markdown('<div class="kpis">' + "".join(f"<div>{c}</div>" for c in cards) + "</div>", unsafe_allow_html=True)
+
+
+def footer() -> None:
+    st.markdown('<div class="footer"><span>wng</span><span>Grafieken: <a href="https://www.tradingview.com/" '
+                'target="_blank" rel="noopener">TradingView Lightweight Charts</a> · Een backtest is geen garantie '
+                'voor de toekomst en geen financieel advies.</span></div>', unsafe_allow_html=True)
 
 
 def page_header(title: str, sub: str | None = None) -> None:

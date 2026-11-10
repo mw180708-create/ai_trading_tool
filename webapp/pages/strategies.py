@@ -315,7 +315,6 @@ def _grid(items: list[dict], mine: bool) -> None:
 
 
 def _new() -> None:
-    st.markdown("Kies een startpunt. Je kunt daarna alles aanpassen.")
     keys = list(strat.TEMPLATES)
     cols = st.columns(3)
     for i, k in enumerate(keys):
@@ -323,7 +322,7 @@ def _new() -> None:
         with cols[i % 3], st.container(key=f"panel_tpl{i}"):
             html_block(f"<div style='font-weight:600'>{esc(t['name'])}</div>"
                        f"<div style='margin:8px 0'>{badge(strat.TYPES[t['type']], 'info')}</div>"
-                       f"<div class='small-note' style='min-height:3.6em'>{esc(t['description'] or 'Begin met één voorwaarde en bouw verder.')}</div>")
+                       f"<div class='small-note' style='min-height:5.6em'>{esc(t['description'] or 'Begin met één voorwaarde en bouw verder.')}</div>")
             if st.button("Gebruiken", key=f"tpl_{k}", width="stretch"):
                 st.session_state["draft"] = strat.normalize(strat.from_template(k, S.display_name()))
                 st.rerun()
@@ -335,22 +334,20 @@ def render() -> None:
         editor()
         return
     own = S.list_strategies()
-    sections = ["Mijn strategieën", "Nieuwe strategie", "Community"]
-    default = sections[0] if own else sections[1]
-    section = st.segmented_control("Onderdeel", sections, default=default, key="strat_section",
-                                   label_visibility="collapsed") or default
-    if section == sections[0]:
-        if not own:
-            st.info("Je hebt nog geen strategieën. Kies **Nieuwe strategie** om te beginnen.")
-        _grid(own, mine=True)
-    elif section == sections[1]:
-        _new()
-    else:
-        pub = S.public_strategies()
-        me = S.user()
-        pub = [s for s in pub if s.get("owner") != me]
-        if not pub:
-            st.info("Er zijn nog geen gedeelde strategieën van anderen. Deel je eigen strategie via **Bewerken → "
-                    "Delen met community**.")
-        _grid(pub, mine=False)
-        st.caption("Alleen de regels van een strategie worden gedeeld – nooit iemands data of resultaten.")
+    labels = ["Mijn strategieën", "Sjablonen", "Community"]
+    tabs = st.tabs(labels, key="strat_tabs", on_change="rerun", default=labels[0] if own else labels[1])
+    if tabs[0].open:
+        with tabs[0]:
+            if not own:
+                st.caption("Je hebt nog geen strategieën. Begin met een sjabloon.")
+            _grid(own, mine=True)
+    if tabs[1].open:
+        with tabs[1]:
+            _new()
+    if tabs[2].open:
+        with tabs[2]:
+            pub = [s for s in S.public_strategies() if s.get("owner") != S.user()]
+            if not pub:
+                st.caption("Nog geen gedeelde strategieën van anderen. Je deelt een strategie via Bewerken → "
+                           "Delen met community. Alleen de regels worden gedeeld, nooit data of resultaten.")
+            _grid(pub, mine=False)

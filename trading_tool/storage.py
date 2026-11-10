@@ -32,7 +32,7 @@ CODE_TF = {v: k for k, v in TF_CODE.items()}
 STORE_REL = "data/store"
 RESULTS_DIR = "results"
 RESERVED = {"users", "guests", "_results", "results", "strategies", "account"}
-BOOKKEEPING = {"deleted.json", "synced.json"}
+BOOKKEEPING = {"deleted.json", "synced.json", "_session.key"}
 OHLCV = ["open", "high", "low", "close", "volume"]
 
 

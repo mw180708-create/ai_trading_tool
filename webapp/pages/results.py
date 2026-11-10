@@ -11,7 +11,7 @@ from trading_tool.metrics import breakdown_by, compute_metrics, format_report
 from .. import nav
 from .. import state as S
 from ..charts import PLOTLY_CONFIG, style
-from ..theme import DOWN, NEUTRAL, UP, html_block, kpi, money, ptitle, series_color, tone_of
+from ..theme import DOWN, NEUTRAL, UP, kpi, kpi_strip, money, ptitle, series_color, tone_of
 
 PCT = st.column_config.NumberColumn(format="%.1f%%")
 R2 = st.column_config.NumberColumn(format="%.2f")
@@ -76,16 +76,14 @@ def render() -> None:
     pf = m["Profit Factor"]
     cards = [
         kpi("Net profit", money(m["Net Profit"]), f"{m['Net Profit %']:+.2f}%", tone_of(m["Net Profit"])),
-        kpi("Winrate", f"{m['Winrate %']:.1f}%", f"BE-exits {m['Break-even %']:.0f}%"),
-        kpi("Profit factor", "∞" if np.isinf(pf) else f"{pf:.2f}", "> 1 = winstgevend", tone_of(pf - 1)),
-        kpi("Max drawdown", f"{m['Max DD %']:.1f}%", "op gesloten trades", "down"),
+        kpi("Winrate", f"{m['Winrate %']:.1f}%"),
+        kpi("Profit factor", "∞" if np.isinf(pf) else f"{pf:.2f}"),
+        kpi("Max drawdown", f"{m['Max DD %']:.1f}%"),
         kpi("Trades", f"{m['Trades']}", " · ".join(f"{n} {t.lower()}" for t, n in trades["trade_type"].value_counts().items())),
         kpi("Gem. RR", f"{m['Avg planned RR']:.2f}", f"{m['Avg R/trade']:+.2f} R per trade", tone_of(m["Avg R/trade"])),
     ]
-    cols = st.columns(6)
-    for i, (c, html) in enumerate(zip(cols, cards)):
-        with c, st.container(key=f"panel_kpi{i}"):
-            html_block(html)
+    kpi_strip(cards)
+    st.write("")
 
     with st.container(key="panel_equity"):
         ptitle("Rendement (%) na elke gesloten trade")

@@ -49,16 +49,13 @@ def render() -> None:
 - **Gedeelde data** is koersdata die de beheerder voor iedereen klaarzet. Je eigen data gaat altijd voor.
 - Wachtwoorden worden versleuteld (scrypt-hash) opgeslagen en nooit leesbaar bewaard.
 """)
-    if S.is_admin() or not S.admins():
+    if S.can_manage():
         with st.container(key="panel_admin"):
             st.markdown("""
-#### Voor de beheerder van deze website
-Instellingen in Streamlit → je app → **⋮ → Settings → Secrets**:
+#### Beheer
+Blijvende opslag stel je in op de pagina **Beheer**: maak daar met één klik een GitHub-token, plak het, en wng maakt
+een privé repository `wng-data` aan voor alle accounts, data en strategieën. Zet daarna in Streamlit → je app →
+**⋮ → Settings → Secrets**:
 """)
-            st.code(f'GITHUB_TOKEN = "ghp_..."            # blijvende opslag (zie Data → GitHub koppelen)\n'
-                    f'GITHUB_REPO = "{S.DEFAULT_REPO}"\n'
-                    f'ADMIN_USERS = "jouw-gebruikersnaam"  # beheerders (komma-gescheiden)\n'
-                    f'ALLOW_SIGNUP = "true"                # "false" = geen nieuwe accounts meer', language="toml")
-            st.caption("Beheerders kunnen data in de gedeelde bibliotheek zetten en de GitHub-koppeling beheren. "
-                       "Zet de GitHub-repository op privé: daar staan alle accounts, data en strategieën.")
-    st.caption("Een backtest is geen garantie voor de toekomst; deze website geeft geen financieel advies.")
+            st.code('GITHUB_TOKEN = "ghp_..."\nADMIN_USERS = "jouw-gebruikersnaam"\n# ALLOW_SIGNUP = "false"   # nieuwe accounts uitzetten',
+                    language="toml")

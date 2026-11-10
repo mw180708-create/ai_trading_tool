@@ -94,7 +94,7 @@ const C = {json.dumps(cfg)};
 const el = document.getElementById('chart');
 const chart = LightweightCharts.createChart(el, {{
   autoSize: true,
-  layout: {{ background: {{ type: 'solid', color: 'rgba(0,0,0,0)' }}, textColor: '#8b8b94',
+  layout: {{ background: {{ type: 'solid', color: 'rgba(0,0,0,0)' }}, textColor: '#8b8b94', attributionLogo: false,
              fontFamily: 'Inter, -apple-system, Segoe UI, sans-serif', fontSize: 11 }},
   grid: {{ vertLines: {{ color: 'rgba(255,255,255,0.035)' }}, horzLines: {{ color: 'rgba(255,255,255,0.035)' }} }},
   rightPriceScale: {{ borderColor: '#222226' }},

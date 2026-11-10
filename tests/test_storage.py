@@ -23,18 +23,38 @@ class FakeResp:
 
 
 class FakeGitHub:
-    """Minimale nabootsing van de GitHub Git Data API."""
+    """Minimale nabootsing van de GitHub API (repo's, Git Data API, trees, blobs)."""
 
-    def __init__(self):
+    def __init__(self, exists=True):
         self.files: dict[str, bytes] = {}
         self.calls: list[tuple[str, str]] = []
         self.headers = {}
         self._blobs: dict[str, bytes] = {}
         self._pending = None
+        self.exists = exists
+        self.created = None
 
     def request(self, method, url, timeout=None, json=None, params=None):
+        import base64 as b64
+        if url.endswith("/user") and method == "GET":
+            return FakeResp({"login": "owner"})
+        if url.endswith("/user/repos") and method == "POST":
+            self.exists, self.created = True, json
+            return FakeResp({"full_name": "owner/" + json["name"]}, 201)
+        if "/repos/owner/repo" not in url:
+            return FakeResp({"message": "Not Found"}, 404)
         path = url.split("/repos/owner/repo", 1)[1]
         self.calls.append((method, path))
+        if not self.exists:
+            return FakeResp({"message": "Not Found"}, 404)
+        if method == "GET" and path.startswith("/git/trees/"):
+            from trading_tool.github_sync import GitHubSync as G
+            return FakeResp({"tree": [{"path": k, "type": "blob", "sha": G.git_blob_sha(v)} for k, v in self.files.items()]})
+        if method == "GET" and path.startswith("/git/blobs/"):
+            from trading_tool.github_sync import GitHubSync as G
+            sha = path.rsplit("/", 1)[1]
+            data = next(v for v in self.files.values() if G.git_blob_sha(v) == sha)
+            return FakeResp({"content": b64.b64encode(data).decode(), "encoding": "base64"})
         if method == "GET" and path == "":
             return FakeResp({"full_name": "owner/repo", "permissions": {"push": True}})
         if method == "GET" and path.startswith("/git/ref/heads/"):
@@ -156,7 +176,7 @@ class StatusSession:
 def test_check_messages():
     mk = lambda r, b=201: GitHubSync(token="t", repo="owner/repo", session=StatusSession(r, b)).check()  # noqa: E731
     ok, msg = mk(200)
-    assert ok and "schrijven werkt" in msg
+    assert ok and "Verbonden" in msg
     ok, msg = mk(401)
     assert not ok and "ongeldig" in msg
     ok, msg = mk(404)
@@ -218,3 +238,25 @@ def test_user_files_go_to_user_folder_on_github(tmp_path):
     assert "data/store/users/dana/EURUSD/H1/2023.parquet" in paths
     assert "data/store/users/dana/strategies/x.json" in paths
     assert all(p.startswith("data/store/users/dana/") for p in paths)
+
+
+
+def test_ensure_repo_and_restore_after_restart(tmp_path):
+    from trading_tool.accounts import Accounts
+    fake = FakeGitHub(exists=False)
+    gh = GitHubSync(token="t", repo="owner/repo", session=fake)
+    ok, how = gh.ensure_repo()
+    assert ok and how == "aangemaakt" and fake.created["private"] is True
+    # server 1: account + data opslaan
+    cache1 = tmp_path / "cache1"
+    acc = Accounts(cache1, github=gh, local_root=tmp_path / "local1")
+    assert acc.register("erik", "lang-genoeg-123")[0]
+    acc.store_for("erik").save("EURUSD", "1D", _sample("2022-01-01", "2023-01-01", "1D"))
+    # server 2 (herstart, lege schijf): alles terughalen
+    cache2 = tmp_path / "cache2"
+    n = gh.restore("data/store", cache2)
+    assert n == len(fake.files) and n >= 2
+    acc2 = Accounts(cache2, github=gh, local_root=tmp_path / "local2")
+    assert acc2.login("erik", "lang-genoeg-123")[0]
+    assert acc2.store_for("erik").load("EURUSD", "1D") is not None
+    assert gh.restore("data/store", cache2) == 0          # niets veranderd -> niets downloaden

@@ -22,7 +22,10 @@ from trading_tool.storage import DataStore, make_github_sync
 from trading_tool.synthetic import demo_dataset
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_REPO = "mw180708-create/ai_trading_tool"
+CACHE_ROOT = ROOT / ".wng_cache"        # lokale kopie van de (privé) opslag-repository
+LOCAL_ROOT = ROOT / ".datastore"        # nieuwe/gewijzigde bestanden op deze server
+DATA_REPO_NAME = "wng-data"             # standaardnaam van de privé opslag-repository
+DEFAULT_REPO = ""                       # leeg = <eigenaar van het token>/wng-data
 SYMBOLS = ["BTCUSD", "EURUSD"]          # alleen voor de demo
 
 
@@ -58,12 +61,12 @@ def clean_token(tok) -> str | None:
 
 
 def clean_repo(repo: str | None) -> str:
-    r = (repo or DEFAULT_REPO).strip().strip('"').strip("'")
+    r = (repo or "").strip().strip('"').strip("'")
     for pre in ("https://github.com/", "http://github.com/", "github.com/"):
         if r.lower().startswith(pre):
             r = r[len(pre):]
     r = r.removesuffix(".git").strip("/")
-    return r or DEFAULT_REPO
+    return r
 
 
 def _token_from_secrets(sec: dict) -> str | None:
@@ -99,16 +102,50 @@ def _cfg() -> tuple[str | None, str, str, str]:
     return tok, clean_repo(str(repo)), str(sec.get("GITHUB_BRANCH", "main")), source
 
 
-@st.cache_resource(show_spinner=False, ttl=1800)
+def _connect(token: str, repo: str, branch: str = "main") -> tuple[GitHubSync | None, dict]:
+    """Token controleren, opslag-repository bepalen/aanmaken (privé) en schrijfrecht testen."""
+    gh = make_github_sync(token, repo or "x/x", branch)
+    status = {"configured": True, "ok": False, "msg": "", "repo": repo}
+    login = gh.user_login()
+    if login is None:
+        status["msg"] = ("GitHub accepteert het token niet: het is ongeldig, verlopen of niet volledig gekopieerd. "
+                         "Maak eventueel een nieuw token.")
+        return None, status
+    gh.repo = repo or f"{login}/{DATA_REPO_NAME}"
+    status["repo"] = gh.repo
+    ok, msg = gh.ensure_repo()
+    if not ok:
+        status["msg"] = msg
+        return None, status
+    ok, msg = gh.check()
+    if ok:
+        info = gh._get(f"/repos/{gh.repo}").json()
+        if not info.get("private", False):
+            ok, msg = False, (f"De repository '{gh.repo}' is openbaar. Accounts en data van gebruikers horen niet in een "
+                              f"openbare repository. Laat GITHUB_REPO leeg (dan maakt wng de privé repository "
+                              f"'{DATA_REPO_NAME}' aan) of zet deze repository op privé.")
+    status.update(ok=ok, msg=msg)
+    return (gh if ok else None), status
+
+
+@st.cache_resource(show_spinner="Opslag laden…", ttl=6 * 3600)
 def _github(token: str | None, repo: str, branch: str, source: str) -> tuple[GitHubSync | None, dict]:
-    """GitHub-koppeling + status (token wordt eerst gecontroleerd)."""
-    gh = make_github_sync(token, repo, branch)
-    status = {"configured": gh is not None, "ok": False, "msg": "Geen token ingesteld.", "source": source,
-              "repo": repo}
+    """GitHub-koppeling + status. Bij een geldige koppeling worden alle gegevens teruggehaald (na een herstart)."""
+    if not token:
+        return None, {"configured": False, "ok": False, "msg": "Geen token ingesteld.", "source": source, "repo": repo}
+    try:
+        gh, status = _connect(token, repo, branch)
+    except Exception as e:  # noqa: BLE001 - netwerkfout e.d.
+        return None, {"configured": True, "ok": False, "msg": f"GitHub niet bereikbaar ({e}).", "source": source,
+                      "repo": repo}
+    status["source"] = source
     if gh is not None:
-        ok, msg = gh.check()
-        status.update(ok=ok, msg=msg)
-    return (gh if status["ok"] else None), status
+        try:
+            status["restored"] = gh.restore("data/store", CACHE_ROOT)
+        except Exception as e:  # noqa: BLE001
+            status.update(ok=False, msg=f"Gegevens terughalen mislukt: {e}")
+            return None, status
+    return gh, status
 
 
 def github() -> GitHubSync | None:
@@ -121,21 +158,27 @@ def github_status() -> dict:
     return st_
 
 
-def test_token(token: str, repo: str | None = None) -> tuple[bool, str]:
-    gh = make_github_sync(clean_token(token), clean_repo(repo), "main")
-    if gh is None:
-        return False, "Plak eerst een token."
-    return gh.check()
+def test_token(token: str, repo: str | None = None) -> tuple[bool, str, str]:
+    """(ok, melding, repository) - maakt de privé repository aan als die nog niet bestaat."""
+    tok = clean_token(token)
+    if not tok:
+        return False, "Plak eerst een token.", ""
+    try:
+        gh, status = _connect(tok, clean_repo(repo))
+    except Exception as e:  # noqa: BLE001
+        return False, f"GitHub niet bereikbaar ({e}).", ""
+    return status["ok"], status["msg"], status["repo"]
 
 
 def use_token_now(token: str, repo: str | None = None) -> None:
     runtime_cfg()["token"] = clean_token(token)
     runtime_cfg()["repo"] = clean_repo(repo)
-    _github.clear()
+    reset_github()
 
 
 def reset_github() -> None:
     _github.clear()
+    _accounts.clear()
 
 
 # --------------------------------------------------------------------------- #
@@ -143,7 +186,7 @@ def reset_github() -> None:
 # --------------------------------------------------------------------------- #
 @st.cache_resource(show_spinner=False)
 def _accounts(cfg_key: tuple) -> Accounts:
-    return Accounts(ROOT, github=_github(*cfg_key)[0])   # één object: onthoudt mislukte inlogpogingen
+    return Accounts(CACHE_ROOT, github=_github(*cfg_key)[0], local_root=LOCAL_ROOT)   # onthoudt foute pogingen
 
 
 def accounts() -> Accounts:
@@ -179,6 +222,8 @@ def login_guest() -> None:
 
 def logout() -> None:
     _reset_session()
+    from .session_cookie import forget
+    forget()
 
 
 def _reset_session() -> None:
@@ -196,6 +241,43 @@ def is_admin() -> bool:
     return user() is not None and user() in admins()
 
 
+def can_manage() -> bool:
+    """Beheer-pagina: beheerders, of (zolang er geen beheerder is ingesteld) elke ingelogde gebruiker."""
+    return user() is not None and (is_admin() or not admins())
+
+
+def persistent() -> bool:
+    return github() is not None
+
+
+def _all_stores() -> list[DataStore]:
+    gh = github()
+    stores = [DataStore(CACHE_ROOT, local_root=LOCAL_ROOT, github=gh)]
+    users_dir = LOCAL_ROOT / "users"
+    if users_dir.is_dir():
+        stores += [DataStore(CACHE_ROOT, local_root=LOCAL_ROOT, github=gh, namespace=f"users/{d.name}")
+                   for d in sorted(users_dir.iterdir()) if d.is_dir()]
+    return stores
+
+
+def unsynced_count() -> int:
+    return sum(len(s_.unsynced_files()) for s_ in _all_stores())
+
+
+def push_all_unsynced() -> tuple[int, str | None]:
+    """Sla alles wat alleen op deze server staat (accounts, data, strategieën) op in de opslag-repository."""
+    total, errors = 0, []
+    for s_ in _all_stores():
+        if s_.github is None:
+            return 0, "geen koppeling"
+        if s_.unsynced_files():
+            rep = s_.push_unsynced()
+            total += rep.total
+            if rep.error:
+                errors.append(rep.error)
+    return total, ("; ".join(errors) if errors else None)
+
+
 def signup_open() -> bool:
     return str(secret("ALLOW_SIGNUP", "true")).strip().lower() not in ("0", "false", "nee", "no")
 
@@ -209,13 +291,13 @@ def namespace() -> str:
 def store() -> DataStore:
     """De eigen (afgeschermde) opslag van de ingelogde gebruiker."""
     if is_guest():
-        return DataStore(ROOT, namespace=namespace())         # gasten: alleen tijdelijk, nooit naar GitHub
-    return DataStore(ROOT, github=github(), namespace=namespace())
+        return DataStore(CACHE_ROOT, local_root=LOCAL_ROOT, namespace=namespace())   # gasten: nooit naar GitHub
+    return DataStore(CACHE_ROOT, local_root=LOCAL_ROOT, github=github(), namespace=namespace())
 
 
 def shared_store() -> DataStore:
     """Gedeelde bibliotheek (alleen beheerders mogen erin schrijven)."""
-    return DataStore(ROOT, github=github())
+    return DataStore(CACHE_ROOT, local_root=LOCAL_ROOT, github=github())
 
 
 # --------------------------------------------------------------------------- #
@@ -249,7 +331,7 @@ def _mtf(ns: str, symbol: str, fp: str) -> MultiTimeframeData | None:
     if fp == "demo":
         return demo_dataset(symbol, seed=SYMBOLS.index(symbol) if symbol in SYMBOLS else 0)
     src = shared_store().load_symbol(symbol)
-    src.update(DataStore(ROOT, namespace=ns).load_symbol(symbol))   # eigen data gaat voor
+    src.update(DataStore(CACHE_ROOT, local_root=LOCAL_ROOT, namespace=ns).load_symbol(symbol))   # eigen data voor
     return build_multi_timeframe(symbol, src) if src else None
 
 

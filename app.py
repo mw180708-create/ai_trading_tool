@@ -35,9 +35,9 @@ def _ensure_fresh_code() -> None:
 
 _ensure_fresh_code()
 
-from webapp import nav, state as S, theme  # noqa: E402
-from webapp.pages import (backtest, dashboard, data, help as help_page, login, results, strategies,  # noqa: E402
-                          trades)
+from webapp import nav, session_cookie as cookie, state as S, theme  # noqa: E402
+from webapp.pages import (admin, backtest, dashboard, data, help as help_page, login, results,  # noqa: E402
+                          strategies, trades)
 
 
 def safe(fn):
@@ -55,39 +55,43 @@ def safe(fn):
 
 def account_menu() -> None:
     name = S.display_name()
-    with st.popover(name, width="stretch"):
-        if S.is_guest():
-            st.caption("Je bent ingelogd als gast. Niets wordt blijvend bewaard.")
-            if st.button("Account maken / inloggen", width="stretch", type="primary"):
+    with st.container(key="acct"):
+        with st.popover(name, width="content"):
+            if S.is_guest():
+                st.caption("Je bekijkt wng als gast. Er wordt niets bewaard.")
+                if st.button("Inloggen of account maken", width="stretch", type="primary"):
+                    S.logout()
+                    st.rerun()
+                return
+            st.caption(f"Ingelogd als {name}" + (" (beheerder)" if S.is_admin() else ""))
+            with st.expander("Wachtwoord wijzigen"):
+                with st.form("pw_form", border=False):
+                    old = st.text_input("Huidig wachtwoord", type="password")
+                    new = st.text_input("Nieuw wachtwoord", type="password")
+                    if st.form_submit_button("Wijzigen", width="stretch"):
+                        ok, msg = S.accounts().change_password(name, old, new)
+                        if ok:
+                            cookie.remember(name)          # oude sessies zijn nu ongeldig
+                        (st.success if ok else st.error)(msg)
+            if st.button("Uitloggen", width="stretch"):
                 S.logout()
                 st.rerun()
-            return
-        st.caption(f"Ingelogd als **{name}**" + (" · beheerder" if S.is_admin() else ""))
-        with st.expander("Wachtwoord wijzigen"):
-            with st.form("pw_form", border=False):
-                old = st.text_input("Huidig wachtwoord", type="password")
-                new = st.text_input("Nieuw wachtwoord", type="password")
-                if st.form_submit_button("Wijzigen", width="stretch"):
-                    ok, msg = S.accounts().change_password(name, old, new)
-                    (st.success if ok else st.error)(msg)
-        if st.button("Uitloggen", width="stretch"):
-            S.logout()
-            S.flash("Je bent uitgelogd.", "info")
-            st.rerun()
 
 
-SUBTITLES = {
-    "dashboard": "Overzicht van je markt en strategie",
-    "strategieen": "Bouw, beheer en deel strategieën",
-    "data": "Je koersdata en de gedeelde bibliotheek",
-    "backtest": "Test een strategie op historische data",
-    "resultaten": "Prestaties van je backtests",
-    "trades": "Elke trade in detail",
-    "uitleg": "Hoe wng werkt",
-}
+def storage_notice(current: str) -> None:
+    """Beheerders zien een duidelijke melding zolang de opslag niet blijvend is."""
+    if current == "beheer" or S.is_guest() or not S.can_manage() or S.persistent():
+        return
+    c1, c2 = st.columns([6, 1])
+    c1.markdown('<div class="notice">Opslag is nog tijdelijk: accounts en data verdwijnen bij een herstart van de '
+                'website.</div>', unsafe_allow_html=True)
+    if c2.button("Instellen", key="notice_setup", width="stretch"):
+        nav.go("admin")
+
 
 theme.inject()
 st.logo(str(theme.LOGO), size="large", icon_image=str(theme.LOGO))
+cookie.auto_login()
 nav.PAGES.clear()
 if S.logged_in():
     nav.PAGES.update({
@@ -99,17 +103,21 @@ if S.logged_in():
         "trades": st.Page(safe(trades.render), title="Trades", url_path="trades"),
         "help": st.Page(safe(help_page.render), title="Uitleg", url_path="uitleg"),
     })
+    if S.can_manage():
+        nav.PAGES["admin"] = st.Page(safe(admin.render), title="Beheer", url_path="beheer")
 else:
     nav.PAGES.update({
-        "login": st.Page(safe(login.render), title="Inloggen", url_path="welkom", default=True),
+        "login": st.Page(safe(login.render), title="Inloggen", url_path="inloggen", default=True),
         "help": st.Page(safe(help_page.render), title="Uitleg", url_path="uitleg"),
     })
 page = st.navigation(list(nav.PAGES.values()), position="top")
 if S.logged_in():
-    head = st.columns([7, 1])
+    head = st.columns([6, 1], vertical_alignment="center")
     with head[0]:
-        theme.page_header(page.title, SUBTITLES.get(page.url_path))
+        theme.page_header(page.title)
     with head[1]:
         account_menu()
-    st.write("")
+    storage_notice(page.url_path)
 page.run()
+theme.footer()
+cookie.flush()
