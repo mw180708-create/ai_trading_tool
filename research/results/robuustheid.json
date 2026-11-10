@@ -1,0 +1,173 @@
+{
+ "bbreak_tr2_both": {
+  "shared_account_1pct": {
+   "return_pct": 82.68864525069904,
+   "per_year_pct": 21.465549166892554,
+   "max_dd_pct": -25.522600048628725,
+   "return_to_dd": 3.239820594028457,
+   "max_open": 10,
+   "avg_open": 4.801652892561983
+  },
+  "shared_account_0.5pct": {
+   "return_pct": 41.34432262534952,
+   "per_year_pct": 10.732774583446277,
+   "max_dd_pct": -12.761300024314362,
+   "return_to_dd": 3.239820594028457,
+   "max_open": 10,
+   "avg_open": 4.801652892561983
+  },
+  "per_year": [
+   {
+    "exit_time": 2023,
+    "count": 118,
+    "sum": 57.846,
+    "mean": 0.49
+   },
+   {
+    "exit_time": 2024,
+    "count": 143,
+    "sum": 7.709,
+    "mean": 0.054
+   },
+   {
+    "exit_time": 2025,
+    "count": 115,
+    "sum": -6.815,
+    "mean": -0.059
+   },
+   {
+    "exit_time": 2026,
+    "count": 108,
+    "sum": 23.949,
+    "mean": 0.222
+   }
+  ],
+  "per_side": [
+   {
+    "direction": "LONG",
+    "count": 274,
+    "sum": 87.744,
+    "mean": 0.32
+   },
+   {
+    "direction": "SHORT",
+    "count": 210,
+    "sum": -5.056,
+    "mean": -0.024
+   }
+  ],
+  "double_costs_mean_R": 0.15416111434779356,
+  "double_costs_total_R": 74.61397934433208,
+  "avg_win_R": 1.497940974055654,
+  "avg_loss_R": -0.7017671978355708,
+  "largest_win_R": 12.793273566574781,
+  "max_consecutive_losses": 24,
+  "avg_bars_held_days": 14.682334710743802
+ },
+ "bbreak_tr2_long": {
+  "shared_account_1pct": {
+   "return_pct": 81.44567937102326,
+   "per_year_pct": 21.324755835316306,
+   "max_dd_pct": -22.94058609919007,
+   "return_to_dd": 3.550287643867074,
+   "max_open": 10,
+   "avg_open": 4.1
+  },
+  "shared_account_0.5pct": {
+   "return_pct": 40.72283968551163,
+   "per_year_pct": 10.662377917658153,
+   "max_dd_pct": -11.470293049595035,
+   "return_to_dd": 3.550287643867074,
+   "max_open": 10,
+   "avg_open": 4.1
+  },
+  "per_year": [
+   {
+    "exit_time": 2023,
+    "count": 78,
+    "sum": 54.088,
+    "mean": 0.693
+   },
+   {
+    "exit_time": 2024,
+    "count": 89,
+    "sum": 20.637,
+    "mean": 0.232
+   },
+   {
+    "exit_time": 2025,
+    "count": 56,
+    "sum": 8.01,
+    "mean": 0.143
+   },
+   {
+    "exit_time": 2026,
+    "count": 62,
+    "sum": -1.29,
+    "mean": -0.021
+   }
+  ],
+  "per_side": [
+   {
+    "direction": "LONG",
+    "count": 285,
+    "sum": 81.446,
+    "mean": 0.286
+   }
+  ],
+  "double_costs_mean_R": 0.26753231403825156,
+  "double_costs_total_R": 76.24670950090169,
+  "avg_win_R": 1.7828567221120626,
+  "avg_loss_R": -0.7122806254371455,
+  "largest_win_R": 12.793273566574781,
+  "max_consecutive_losses": 19,
+  "avg_bars_held_days": 11.38187134502924
+ },
+ "neighbours_in_test": {
+  "bbreak_tr2_both": {
+   "trades": 484,
+   "mean_R": 0.171,
+   "total_R": 82.7
+  },
+  "bbreak_tr3_both": {
+   "trades": 359,
+   "mean_R": 0.406,
+   "total_R": 145.8
+  },
+  "bbreak_tr2_long": {
+   "trades": 285,
+   "mean_R": 0.286,
+   "total_R": 81.4
+  },
+  "bbreak_tr3_long": {
+   "trades": 234,
+   "mean_R": 0.578,
+   "total_R": 135.2
+  },
+  "donchian_n20_tr2_both": {
+   "trades": 482,
+   "mean_R": 0.157,
+   "total_R": 75.6
+  },
+  "donchian_n20_tr3_both": {
+   "trades": 382,
+   "mean_R": 0.324,
+   "total_R": 123.9
+  },
+  "donchian_n55_tr3_both": {
+   "trades": 244,
+   "mean_R": 0.299,
+   "total_R": 73.0
+  },
+  "sma_n50_tr3_both": {
+   "trades": 290,
+   "mean_R": 0.391,
+   "total_R": 113.4
+  },
+  "emax_20_50_tr3_both": {
+   "trades": 249,
+   "mean_R": 0.327,
+   "total_R": 81.5
+  }
+ }
+}

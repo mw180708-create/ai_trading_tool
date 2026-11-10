@@ -6,3 +6,4 @@ data/*.csv
 .datastore/
 .streamlit/secrets.toml
 .wng_cache/
+!research/results/
