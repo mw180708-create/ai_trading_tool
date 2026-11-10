@@ -55,6 +55,17 @@ def _op(ind, tf=None, **params):
 
 
 TEMPLATES: dict[str, dict] = {
+    "trend_bb": {
+        "name": "Trendvolger – Bollinger-uitbraak (dag)", "type": "rules", "risk_pct": 0.5,
+        "description": "Uit het wng-onderzoek op 10 crypto-munten: long als de dag-close boven de bovenste "
+                       "Bollinger Band (20, 2) sluit, stop en meeschuivende stop op 2× ATR(20), geen vast doel.",
+        "params": normalize_rules({
+            "signal_tf": "1D", "direction": "long",
+            "long": {"logic": "all", "conditions": [
+                {"left": _op("close"), "op": "crosses_above", "right": _op("bb_upper", length=20, mult=2.0)}]},
+            "stop": {"type": "atr", "value": 2.0, "length": 20}, "target": {"type": "none", "value": 0},
+            "trailing_atr": 2.0, "trailing_length": 20}),
+    },
     "ema_cross": {
         "name": "EMA-crossover 20/50 met trendfilter", "type": "rules", "risk_pct": 1.0,
         "description": "Long als EMA 20 boven EMA 50 kruist en de prijs boven de 1D EMA 200 staat (short andersom).",
